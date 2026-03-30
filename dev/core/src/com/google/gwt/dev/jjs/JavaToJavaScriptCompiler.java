@@ -148,6 +148,7 @@ import com.google.gwt.dev.js.JsNormalizer;
 import com.google.gwt.dev.js.JsObfuscateNamer;
 import com.google.gwt.dev.js.JsPrettyNamer;
 import com.google.gwt.dev.js.JsReportGenerationVisitor;
+import com.google.gwt.dev.js.JsToStringGenerationVisitor;
 import com.google.gwt.dev.js.JsStackEmulator;
 import com.google.gwt.dev.js.JsStaticEval;
 import com.google.gwt.dev.js.JsSymbolResolver;
@@ -772,7 +773,9 @@ public final class JavaToJavaScriptCompiler {
           DefaultTextOutput out = new DefaultTextOutput(!options.isIncrementalCompileEnabled() &&
               options.getOutput().shouldMinimize());
           JsReportGenerationVisitor v = new JsReportGenerationVisitor(out, jjsMap,
-              options.isJsonSoycEnabled());
+              options.isJsonSoycEnabled(),
+              new JsToStringGenerationVisitor.PrintOptions(
+                  false, options.getOutput() == JsOutputOption.OBFUSCATED));
           v.accept(jsProgram.getFragmentBlock(i));
 
           StatementRanges statementRanges = v.getStatementRanges();

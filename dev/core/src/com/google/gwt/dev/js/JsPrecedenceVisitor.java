@@ -17,23 +17,29 @@ package com.google.gwt.dev.js;
 
 import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsArrowFunction;
+import com.google.gwt.dev.js.ast.JsAwait;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBlock;
 import com.google.gwt.dev.js.ast.JsBooleanLiteral;
 import com.google.gwt.dev.js.ast.JsBreak;
 import com.google.gwt.dev.js.ast.JsCase;
 import com.google.gwt.dev.js.ast.JsCatch;
+import com.google.gwt.dev.js.ast.JsClass;
+import com.google.gwt.dev.js.ast.JsComputedPropertyKey;
 import com.google.gwt.dev.js.ast.JsConditional;
 import com.google.gwt.dev.js.ast.JsContext;
 import com.google.gwt.dev.js.ast.JsContinue;
 import com.google.gwt.dev.js.ast.JsDebugger;
 import com.google.gwt.dev.js.ast.JsDefault;
+import com.google.gwt.dev.js.ast.JsDestructuring;
 import com.google.gwt.dev.js.ast.JsDoWhile;
 import com.google.gwt.dev.js.ast.JsEmpty;
 import com.google.gwt.dev.js.ast.JsExprStmt;
 import com.google.gwt.dev.js.ast.JsExpression;
 import com.google.gwt.dev.js.ast.JsFor;
 import com.google.gwt.dev.js.ast.JsForIn;
+import com.google.gwt.dev.js.ast.JsForOf;
 import com.google.gwt.dev.js.ast.JsFunction;
 import com.google.gwt.dev.js.ast.JsIf;
 import com.google.gwt.dev.js.ast.JsInvocation;
@@ -52,8 +58,11 @@ import com.google.gwt.dev.js.ast.JsProgram;
 import com.google.gwt.dev.js.ast.JsPropertyInitializer;
 import com.google.gwt.dev.js.ast.JsRegExp;
 import com.google.gwt.dev.js.ast.JsReturn;
+import com.google.gwt.dev.js.ast.JsSpread;
 import com.google.gwt.dev.js.ast.JsStringLiteral;
+import com.google.gwt.dev.js.ast.JsSuperRef;
 import com.google.gwt.dev.js.ast.JsSwitch;
+import com.google.gwt.dev.js.ast.JsTemplateLiteral;
 import com.google.gwt.dev.js.ast.JsThisRef;
 import com.google.gwt.dev.js.ast.JsThrow;
 import com.google.gwt.dev.js.ast.JsTry;
@@ -61,6 +70,7 @@ import com.google.gwt.dev.js.ast.JsVars;
 import com.google.gwt.dev.js.ast.JsVars.JsVar;
 import com.google.gwt.dev.js.ast.JsVisitor;
 import com.google.gwt.dev.js.ast.JsWhile;
+import com.google.gwt.dev.js.ast.JsYield;
 
 /**
  * Precedence indices from "JavaScript - The Definitive Guide" 4th Edition (page
@@ -114,6 +124,18 @@ class JsPrecedenceVisitor extends JsVisitor {
   }
 
   @Override
+  public boolean visit(JsArrowFunction x, JsContext ctx) {
+    answer = 2; // Arrow functions have assignment-level precedence
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsAwait x, JsContext ctx) {
+    answer = 14; // Unary-level precedence
+    return false;
+  }
+
+  @Override
   public boolean visit(JsBinaryOperation x, JsContext ctx) {
     answer = x.getOperator().getPrecedence();
     return false;
@@ -146,6 +168,17 @@ class JsPrecedenceVisitor extends JsVisitor {
   }
 
   @Override
+  public boolean visit(JsClass x, JsContext ctx) {
+    throw new RuntimeException("Only expressions have precedence.");
+  }
+
+  @Override
+  public boolean visit(JsComputedPropertyKey x, JsContext ctx) {
+    answer = 17; // primary (delimited by brackets)
+    return false;
+  }
+
+  @Override
   public boolean visit(JsConditional x, JsContext ctx) {
     answer = 3;
     return false;
@@ -164,6 +197,12 @@ class JsPrecedenceVisitor extends JsVisitor {
   @Override
   public boolean visit(JsDefault x, JsContext ctx) {
     throw new RuntimeException("Only expressions have precedence.");
+  }
+
+  @Override
+  public boolean visit(JsDestructuring x, JsContext ctx) {
+    answer = 17; // primary (delimited pattern)
+    return false;
   }
 
   @Override
@@ -188,6 +227,11 @@ class JsPrecedenceVisitor extends JsVisitor {
 
   @Override
   public boolean visit(JsForIn x, JsContext ctx) {
+    throw new RuntimeException("Only expressions have precedence.");
+  }
+
+  @Override
+  public boolean visit(JsForOf x, JsContext ctx) {
     throw new RuntimeException("Only expressions have precedence.");
   }
 
@@ -305,6 +349,18 @@ class JsPrecedenceVisitor extends JsVisitor {
   }
 
   @Override
+  public boolean visit(JsSpread x, JsContext ctx) {
+    answer = 2; // Spread has low precedence
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsSuperRef x, JsContext ctx) {
+    answer = 17; // primary
+    return false;
+  }
+
+  @Override
   public boolean visit(JsSwitch x, JsContext ctx) {
     throw new RuntimeException("Only expressions have precedence.");
   }
@@ -312,6 +368,16 @@ class JsPrecedenceVisitor extends JsVisitor {
   @Override
   public boolean visit(JsThisRef x, JsContext ctx) {
     answer = 17; // primary
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsTemplateLiteral x, JsContext ctx) {
+    if (x.getTag() != null) {
+      answer = 16; // tagged template = member expression level
+    } else {
+      answer = 17; // primary
+    }
     return false;
   }
 
@@ -338,6 +404,12 @@ class JsPrecedenceVisitor extends JsVisitor {
   @Override
   public boolean visit(JsWhile x, JsContext ctx) {
     throw new RuntimeException("Only expressions have precedence.");
+  }
+
+  @Override
+  public boolean visit(JsYield x, JsContext ctx) {
+    answer = 2; // yield has assignment-level precedence
+    return false;
   }
 
 }

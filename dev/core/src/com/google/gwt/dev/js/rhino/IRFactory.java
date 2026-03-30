@@ -441,6 +441,206 @@ public class IRFactory {
             ts.getLine(), ts.getOffset());
     }
 
+    // ===== ES6+ factory methods =====
+
+    /**
+     * Arrow function: (params) => body
+     * Children: [name, args, body]  (same layout as FUNCTION)
+     * intDatum: 1 = async, 0 = not async
+     * Uses ARROWFUNC token type to distinguish from regular functions.
+     */
+    public Object createArrowFunction(Object args, Object body,
+                                      String sourceName, int baseLineno,
+                                      int endLineno, boolean isAsync)
+    {
+        Node f = new Node(TokenStream.ARROWFUNC,
+                          Node.newString(TokenStream.NAME, ""),
+                          (Node)args, (Node)body, isAsync ? 1 : 0);
+        f.putProp(Node.SOURCENAME_PROP, sourceName);
+        f.putIntProp(Node.BASE_LINENO_PROP, baseLineno);
+        f.putIntProp(Node.END_LINENO_PROP, endLineno);
+        return f;
+    }
+
+    /**
+     * For...of: for (lhs of iterable) body
+     * Children: [lhs, iterable, body]
+     */
+    public Object createForOf(Object lhs, Object iterable, Object body, int lineno) {
+        return new Node(TokenStream.FOROF, (Node)lhs, (Node)iterable, (Node)body, lineno);
+    }
+
+    /**
+     * Template literal with string parts and interpolation expressions.
+     * SPECIAL_PROP_PROP stores the string parts joined by '\0'.
+     * Children are the interpolation expression nodes.
+     * Invariant: strings.length == expressions.length + 1
+     *
+     * @param strings  array of string parts (N+1 elements for N interpolations)
+     * @param expressions  array of expression nodes (N elements)
+     */
+    public Object createTemplateLiteral(String[] strings, Object[] expressions, int lineno) {
+        Node n = new Node(TokenStream.TEMPLATELIT, lineno);
+        // Join string parts with null character as delimiter
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < strings.length; i++) {
+            if (i > 0) sb.append('\0');
+            sb.append(strings[i]);
+        }
+        n.putProp(Node.SPECIAL_PROP_PROP, sb.toString());
+        // Add expression children
+        for (Object expr : expressions) {
+            n.addChildToBack((Node) expr);
+        }
+        return n;
+    }
+
+    /**
+     * Class declaration/expression.
+     * Children: [name, superExpr, body]
+     * name is NAME node (possibly empty string for anonymous classes).
+     * superExpr is the extends expression or VOID if none.
+     * body is a BLOCK of class members.
+     */
+    public Object createClass(String name, Object superExpr, Object body,
+                              String sourceName, int baseLineno, int endLineno)
+    {
+        Node nameNode = Node.newString(TokenStream.NAME, name == null ? "" : name);
+        Node superNode = superExpr != null ? (Node) superExpr : new Node(TokenStream.VOID);
+        Node result = new Node(TokenStream.CLASSNODE, nameNode, superNode, (Node)body, baseLineno);
+        result.putProp(Node.SOURCENAME_PROP, sourceName);
+        result.putIntProp(Node.END_LINENO_PROP, endLineno);
+        return result;
+    }
+
+    /**
+     * Class member: method or property in a class body.
+     * Children: [key, value]
+     * intDatum encodes flags: bit 0 = static, bit 1 = getter, bit 2 = setter,
+     *                         bit 3 = computed, bit 4 = generator, bit 5 = async
+     */
+    public Object createClassMember(Object key, Object value,
+                                    boolean isStatic, boolean isGetter,
+                                    boolean isSetter, boolean isComputed,
+                                    boolean isGenerator, boolean isAsync,
+                                    int lineno)
+    {
+        int flags = (isStatic ? 1 : 0)
+                  | (isGetter ? 2 : 0)
+                  | (isSetter ? 4 : 0)
+                  | (isComputed ? 8 : 0)
+                  | (isGenerator ? 16 : 0)
+                  | (isAsync ? 32 : 0);
+        return new Node(TokenStream.CLASSMEMBER, (Node)key, (Node)value, flags);
+    }
+
+    /**
+     * Let/const variable declaration.
+     * Works like createVariables but with different token type.
+     */
+    public Object createLetVariables(int lineno) {
+        return new Node(TokenStream.LET, lineno);
+    }
+
+    public Object createConstVariables(int lineno) {
+        return new Node(TokenStream.CONST, lineno);
+    }
+
+    /**
+     * Spread expression: ...expr
+     * Child: [expr]
+     */
+    public Object createSpread(Object expr) {
+        return new Node(TokenStream.SPREAD, (Node)expr);
+    }
+
+    /**
+     * Rest parameter: ...name
+     * Child: [name]
+     */
+    public Object createRest(Object nameNode) {
+        return new Node(TokenStream.REST, (Node)nameNode);
+    }
+
+    /**
+     * Yield expression: yield expr / yield* expr
+     * Child: [expr] (may be null)
+     * intDatum: 1 = delegating (yield*), 0 = normal yield
+     */
+    public Object createYield(Object expr, boolean isDelegating, int lineno) {
+        if (expr == null) {
+            Node n = new Node(TokenStream.YIELDEXPR, lineno);
+            n.putIntProp(Node.LOCAL_PROP, isDelegating ? 1 : 0);
+            return n;
+        }
+        Node n = new Node(TokenStream.YIELDEXPR, (Node) expr, isDelegating ? 1 : 0);
+        return n;
+    }
+
+    /**
+     * Await expression: await expr
+     * Child: [expr]
+     */
+    public Object createAwait(Object expr) {
+        return new Node(TokenStream.AWAITEXPR, (Node) expr);
+    }
+
+    /**
+     * Super reference.
+     */
+    public Object createSuper(int lineno) {
+        return new Node(TokenStream.SUPERREF, lineno);
+    }
+
+    /**
+     * Computed property key: [expr]
+     * Child: [expr]
+     */
+    public Object createComputedProp(Object expr) {
+        return new Node(TokenStream.COMPUTED_PROP, (Node) expr);
+    }
+
+    /**
+     * Exponentiation operator: base ** exp
+     */
+    public Object createExponentiation(Object left, Object right) {
+        return new Node(TokenStream.EXPONENT, (Node) left, (Node) right);
+    }
+
+    /**
+     * Nullish coalescing: left ?? right
+     */
+    public Object createNullishCoalesce(Object left, Object right) {
+        return new Node(TokenStream.NULLCOALESCE, (Node) left, (Node) right);
+    }
+
+    /**
+     * Optional chaining: obj?.prop
+     */
+    public Object createOptionalChain(Object obj, Object prop) {
+        return new Node(TokenStream.OPTCHAIN, (Node) obj, (Node) prop);
+    }
+
+    /**
+     * Function with generator/async flags.
+     * Children: [name, args, body]
+     * Uses bit flags in a property: bit 0 = generator, bit 1 = async
+     */
+    public Object createFunctionEx(String name, Object args, Object body,
+                                   String sourceName, int baseLineno,
+                                   int endLineno, Object source,
+                                   boolean isExpr, boolean isGenerator,
+                                   boolean isAsync)
+    {
+        Node f = (Node) createFunction(name, args, body, sourceName,
+                                       baseLineno, endLineno, source, isExpr);
+        int flags = (isGenerator ? 1 : 0) | (isAsync ? 2 : 0);
+        if (flags != 0) {
+            f.putIntProp(Node.LOCAL_PROP, flags);
+        }
+        return f;
+    }
+
     // Only needed to get file/line information. Could create an interface
     // that TokenStream implements if we want to make the connection less
     // direct.

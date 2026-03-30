@@ -21,6 +21,8 @@ import com.google.gwt.core.ext.linker.impl.StandardStatementRanges;
 import com.google.gwt.dev.js.ast.HasName;
 import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsArrowFunction;
+import com.google.gwt.dev.js.ast.JsAwait;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBinaryOperator;
 import com.google.gwt.dev.js.ast.JsBlock;
@@ -28,17 +30,23 @@ import com.google.gwt.dev.js.ast.JsBooleanLiteral;
 import com.google.gwt.dev.js.ast.JsBreak;
 import com.google.gwt.dev.js.ast.JsCase;
 import com.google.gwt.dev.js.ast.JsCatch;
+import com.google.gwt.dev.js.ast.JsClass;
+import com.google.gwt.dev.js.ast.JsClass.JsClassMember;
+import com.google.gwt.dev.js.ast.JsComputedPropertyKey;
 import com.google.gwt.dev.js.ast.JsConditional;
 import com.google.gwt.dev.js.ast.JsContext;
 import com.google.gwt.dev.js.ast.JsContinue;
 import com.google.gwt.dev.js.ast.JsDebugger;
 import com.google.gwt.dev.js.ast.JsDefault;
+import com.google.gwt.dev.js.ast.JsDestructuring;
+import com.google.gwt.dev.js.ast.JsDestructuring.JsDestructuringElement;
 import com.google.gwt.dev.js.ast.JsDoWhile;
 import com.google.gwt.dev.js.ast.JsEmpty;
 import com.google.gwt.dev.js.ast.JsExprStmt;
 import com.google.gwt.dev.js.ast.JsExpression;
 import com.google.gwt.dev.js.ast.JsFor;
 import com.google.gwt.dev.js.ast.JsForIn;
+import com.google.gwt.dev.js.ast.JsForOf;
 import com.google.gwt.dev.js.ast.JsFunction;
 import com.google.gwt.dev.js.ast.JsIf;
 import com.google.gwt.dev.js.ast.JsInvocation;
@@ -60,10 +68,14 @@ import com.google.gwt.dev.js.ast.JsProgram;
 import com.google.gwt.dev.js.ast.JsProgramFragment;
 import com.google.gwt.dev.js.ast.JsPropertyInitializer;
 import com.google.gwt.dev.js.ast.JsRegExp;
+import com.google.gwt.dev.js.ast.JsRestParameter;
 import com.google.gwt.dev.js.ast.JsReturn;
+import com.google.gwt.dev.js.ast.JsSpread;
 import com.google.gwt.dev.js.ast.JsStatement;
 import com.google.gwt.dev.js.ast.JsStringLiteral;
+import com.google.gwt.dev.js.ast.JsSuperRef;
 import com.google.gwt.dev.js.ast.JsSwitch;
+import com.google.gwt.dev.js.ast.JsTemplateLiteral;
 import com.google.gwt.dev.js.ast.JsThisRef;
 import com.google.gwt.dev.js.ast.JsThrow;
 import com.google.gwt.dev.js.ast.JsTry;
@@ -72,6 +84,7 @@ import com.google.gwt.dev.js.ast.JsVars;
 import com.google.gwt.dev.js.ast.JsVars.JsVar;
 import com.google.gwt.dev.js.ast.JsVisitor;
 import com.google.gwt.dev.js.ast.JsWhile;
+import com.google.gwt.dev.js.ast.JsYield;
 import com.google.gwt.dev.util.TextOutput;
 import com.google.gwt.dev.util.collect.HashSet;
 import com.google.gwt.util.tools.shared.StringUtils;
@@ -87,37 +100,52 @@ import java.util.Set;
 @SuppressWarnings("checkstyle:MethodName")
 public class JsToStringGenerationVisitor extends JsVisitor {
 
-  private static final char[] CHARS_BREAK = "break".toCharArray();
-  private static final char[] CHARS_CASE = "case".toCharArray();
-  private static final char[] CHARS_CATCH = "catch".toCharArray();
-  private static final char[] CHARS_CONTINUE = "continue".toCharArray();
-  private static final char[] CHARS_DEBUGGER = "debugger".toCharArray();
-  private static final char[] CHARS_DEFAULT = "default".toCharArray();
-  private static final char[] CHARS_DO = "do".toCharArray();
-  private static final char[] CHARS_ELSE = "else".toCharArray();
-  private static final char[] CHARS_FALSE = "false".toCharArray();
-  private static final char[] CHARS_FINALLY = "finally".toCharArray();
-  private static final char[] CHARS_FOR = "for".toCharArray();
-  private static final char[] CHARS_FUNCTION = "function".toCharArray();
-  private static final char[] CHARS_IF = "if".toCharArray();
-  private static final char[] CHARS_IN = "in".toCharArray();
-  private static final char[] CHARS_NEW = "new".toCharArray();
-  private static final char[] CHARS_NULL = "null".toCharArray();
-  private static final char[] CHARS_RETURN = "return".toCharArray();
-  private static final char[] CHARS_SWITCH = "switch".toCharArray();
-  private static final char[] CHARS_THIS = "this".toCharArray();
-  private static final char[] CHARS_THROW = "throw".toCharArray();
-  private static final char[] CHARS_TRUE = "true".toCharArray();
-  private static final char[] CHARS_TRY = "try".toCharArray();
-  private static final char[] CHARS_VAR = "var".toCharArray();
-  private static final char[] CHARS_WHILE = "while".toCharArray();
+  private static final String BREAK = "break";
+  private static final String CASE = "case";
+  private static final String CATCH = "catch";
+  private static final String CONTINUE = "continue";
+  private static final String DEBUGGER = "debugger";
+  private static final String DEFAULT = "default";
+  private static final String DO = "do";
+  private static final String ELSE = "else";
+  private static final String FALSE = "false";
+  private static final String FINALLY = "finally";
+  private static final String FOR = "for";
+  private static final String FUNCTION = "function";
+  private static final String IF = "if";
+  private static final String IN = "in";
+  private static final String NEW = "new";
+  private static final String NULL = "null";
+  private static final String RETURN = "return";
+  private static final String SWITCH = "switch";
+  private static final String THIS = "this";
+  private static final String THROW = "throw";
+  private static final String TRUE = "true";
+  private static final String TRY = "try";
+  private static final String VAR = "var";
+  private static final String WHILE = "while";
+  private static final String LET = "let";
+  private static final String CONST = "const";
+  private static final String CLASS = "class";
+  private static final String EXTENDS = "extends";
+  private static final String SUPER = "super";
+  private static final String STATIC = "static";
+  private static final String GET = "get";
+  private static final String SET = "set";
+  private static final String OF = "of";
+  private static final String ASYNC = "async";
+  private static final String AWAIT = "await";
+  private static final String YIELD = "yield";
+  private static final String ARROW = "=>";
+  private static final String SPREAD = "...";
   /**
    * How many lines of code to print inside of a JsBlock when printing terse.
    */
   private static final int JSBLOCK_LINES_TO_PRINT = 3;
+  private static final long MAX_DECIMAL_VALUE = 999_999_999_999L;
 
   protected boolean needSemi = true;
-  private List<NamedRange> classRanges = new ArrayList<NamedRange>();
+  private final List<NamedRange> classRanges = new ArrayList<>();
   private NamedRange currentClassRange;
   private NamedRange programClassRange;
 
@@ -127,27 +155,39 @@ public class JsToStringGenerationVisitor extends JsVisitor {
    * because the statements designated by statementEnds and statementStarts are
    * those that appear directly within these global blocks.
    */
-  private Set<JsBlock> globalBlocks = new HashSet<JsBlock>();
+  private final Set<JsBlock> globalBlocks = new HashSet<>();
   private final TextOutput p;
-  private ArrayList<Integer> statementEnds = new ArrayList<Integer>();
-  private ArrayList<Integer> statementStarts = new ArrayList<Integer>();
+  private final ArrayList<Integer> statementEnds = new ArrayList<>();
+  private final ArrayList<Integer> statementStarts = new ArrayList<>();
   private final boolean useLongIdents;
+  private final boolean minifyLiterals;
+
+  public static class PrintOptions {
+    public final boolean useLongIdents;
+    public final boolean minifyLiterals;
+
+    public PrintOptions(boolean useLongIdents, boolean minifyLiterals) {
+      this.useLongIdents = useLongIdents;
+      this.minifyLiterals = minifyLiterals;
+    }
+  }
 
   /**
    * Generate the output string using short identifiers.
    */
   public JsToStringGenerationVisitor(TextOutput out) {
-    this(out, false);
+    this(out, new PrintOptions(false, false));
   }
 
   /**
    * Generate the output string using short or long identifiers.
    *
-   * @param useLongIdents if true, emit all identifiers in long form
+   * @param options settings for minification
    */
-  JsToStringGenerationVisitor(TextOutput out, boolean useLongIdents) {
+  JsToStringGenerationVisitor(TextOutput out, PrintOptions options) {
     this.p = out;
-    this.useLongIdents = useLongIdents;
+    this.useLongIdents = options.useLongIdents;
+    this.minifyLiterals = options.minifyLiterals;
   }
 
   public List<NamedRange> getClassRanges() {
@@ -173,7 +213,11 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     _parenPush(x, arrayExpr, false);
     accept(arrayExpr);
     _parenPop(x, arrayExpr, false);
-    _lsquare();
+    if (x.isOptionalChaining()) {
+      p.print("?.[");
+    } else {
+      _lsquare();
+    }
     accept(x.getIndexExpr());
     _rsquare();
     return false;
@@ -183,14 +227,62 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   public boolean visit(JsArrayLiteral x, JsContext ctx) {
     _lsquare();
     boolean sep = false;
-    for (Object element : x.getExpressions()) {
-      JsExpression arg = (JsExpression) element;
+    for (JsExpression arg : x.getExpressions()) {
       sep = _sepCommaOptSpace(sep);
       _parenPushIfCommaExpr(arg);
       accept(arg);
       _parenPopIfCommaExpr(arg);
     }
     _rsquare();
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsArrowFunction x, JsContext ctx) {
+    if (x.isAsync()) {
+      p.print(ASYNC);
+      _space();
+    }
+    boolean singleParam = x.getParameters().size() == 1;
+    if (!singleParam) {
+      _lparen();
+    }
+    boolean sep = false;
+    for (JsParameter param : x.getParameters()) {
+      sep = _sepCommaOptSpace(sep);
+      accept(param);
+    }
+    if (!singleParam) {
+      _rparen();
+    }
+    _spaceOpt();
+    p.print(ARROW);
+    _spaceOpt();
+    if (x.isConciseBody()) {
+      // Expression body: emit just the expression, no braces
+      JsExprStmt exprStmt = (JsExprStmt) x.getBody().getStatements().get(0);
+      JsExpression expr = exprStmt.getExpression();
+      // Wrap object literals in parens to avoid ambiguity with block
+      boolean needsParens = expr instanceof JsObjectLiteral;
+      if (needsParens) {
+        _lparen();
+      }
+      accept(expr);
+      if (needsParens) {
+        _rparen();
+      }
+    } else {
+      accept(x.getBody());
+    }
+    needSemi = true;
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsAwait x, JsContext ctx) {
+    p.print(AWAIT);
+    _space();
+    accept(x.getExpression());
     return false;
   }
 
@@ -227,6 +319,10 @@ public class JsToStringGenerationVisitor extends JsVisitor {
 
   @Override
   public boolean visit(JsBooleanLiteral x, JsContext ctx) {
+    if (minifyLiterals) {
+      p.print(x.getValue() ? "!0" : "!1");
+      return false;
+    }
     if (x.getValue()) {
       _true();
     } else {
@@ -293,6 +389,77 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     _spaceOpt();
     accept(x.getBody());
 
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsClass x, JsContext ctx) {
+    p.print(CLASS);
+    if (x.getName() != null) {
+      _space();
+      _nameDef(x.getName());
+    }
+    if (x.getSuperExpr() != null) {
+      _space();
+      p.print(EXTENDS);
+      _space();
+      accept(x.getSuperExpr());
+    }
+    _spaceOpt();
+    _lbrace();
+    p.indentIn();
+    _newlineOpt();
+    if (x.getConstructor() != null) {
+      p.print("constructor");
+      _lparen();
+      boolean sep = false;
+      for (JsParameter param : x.getConstructor().getParameters()) {
+        sep = _sepCommaOptSpace(sep);
+        accept(param);
+      }
+      _rparen();
+      accept(x.getConstructor().getBody());
+      _newlineOpt();
+    }
+    for (JsClassMember member : x.getMembers()) {
+      if (member.isStatic()) {
+        p.print(STATIC);
+        _space();
+      }
+      if (member.isGetter()) {
+        p.print(GET);
+        _space();
+      } else if (member.isSetter()) {
+        p.print(SET);
+        _space();
+      }
+      if (member.isComputed()) {
+        _lsquare();
+        accept(member.getNameExpr());
+        _rsquare();
+      } else {
+        accept(member.getNameExpr());
+      }
+      accept(member.getValueExpr());
+      _newlineOpt();
+    }
+    p.indentOut();
+    _rbrace();
+    needSemi = false;
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsClassMember x, JsContext ctx) {
+    // Handled by visit(JsClass)
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsComputedPropertyKey x, JsContext ctx) {
+    _lsquare();
+    accept(x.getExpression());
+    _rsquare();
     return false;
   }
 
@@ -387,8 +554,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     _colon();
 
     indent();
-    for (Object element : x.getStmts()) {
-      JsStatement stmt = (JsStatement) element;
+    for (JsStatement stmt : x.getStmts()) {
       needSemi = true;
       accept(stmt);
       if (needSemi) {
@@ -398,6 +564,48 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     }
     outdent();
     needSemi = false;
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsDestructuring x, JsContext ctx) {
+    if (x.getDestructuringKind() == JsDestructuring.Kind.ARRAY) {
+      _lsquare();
+    } else {
+      _lbrace();
+    }
+    boolean sep = false;
+    for (JsDestructuringElement elem : x.getElements()) {
+      sep = _sepCommaOptSpace(sep);
+      if (elem.isRest()) {
+        p.print(SPREAD);
+      }
+      if (elem.getKey() != null) {
+        accept(elem.getKey());
+        _colon();
+        _spaceOpt();
+      }
+      if (elem.getTarget() != null) {
+        accept(elem.getTarget());
+      }
+      if (elem.getDefaultValue() != null) {
+        _spaceOpt();
+        _assignment();
+        _spaceOpt();
+        accept(elem.getDefaultValue());
+      }
+    }
+    if (x.getDestructuringKind() == JsDestructuring.Kind.ARRAY) {
+      _rsquare();
+    } else {
+      _rbrace();
+    }
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsDestructuringElement x, JsContext ctx) {
+    // Handled by visit(JsDestructuring)
     return false;
   }
 
@@ -515,13 +723,53 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     return false;
   }
 
+  @Override
+  public boolean visit(JsForOf x, JsContext ctx) {
+    _for();
+    _spaceOpt();
+    _lparen();
+
+    if (x.getIterVarName() != null) {
+      p.print(LET);
+      _space();
+      _nameDef(x.getIterVarName());
+
+      if (x.getIterExpr() != null) {
+        _spaceOpt();
+        _assignment();
+        _spaceOpt();
+        accept(x.getIterExpr());
+      }
+    } else {
+      accept(x.getIterExpr());
+    }
+
+    _space();
+    p.print(OF);
+    _space();
+    accept(x.getIterableExpr());
+
+    _rparen();
+    _nestedPush(x.getBody(), false);
+    accept(x.getBody());
+    _nestedPop(x.getBody());
+    return false;
+  }
+
   // function foo(a, b) {
   // stmts...
   // }
   //
   @Override
   public boolean visit(JsFunction x, JsContext ctx) {
+    if (x.isAsync()) {
+      p.print(ASYNC);
+      _space();
+    }
     _function();
+    if (x.isGenerator()) {
+      p.print('*');
+    }
 
     // Functions can be anonymous.
     //
@@ -532,8 +780,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
 
     _lparen();
     boolean sep = false;
-    for (Object element : x.getParameters()) {
-      JsParameter param = (JsParameter) element;
+    for (JsParameter param : x.getParameters()) {
       sep = _sepCommaOptSpace(sep);
       accept(param);
     }
@@ -588,8 +835,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
 
     _lparen();
     boolean sep = false;
-    for (Object element : x.getArguments()) {
-      JsExpression arg = (JsExpression) element;
+    for (JsExpression arg : x.getArguments()) {
       sep = _sepCommaOptSpace(sep);
       _parenPushIfCommaExpr(arg);
       accept(arg);
@@ -626,13 +872,17 @@ public class JsToStringGenerationVisitor extends JsVisitor {
       _parenPush(x, q, false);
       accept(q);
       if (q instanceof JsNumberLiteral) {
-        /**
+        /*
          * Fix for Issue #3796. "42.foo" is not allowed, but "42 .foo" is.
          */
         _space();
       }
       _parenPop(x, q, false);
-      _dot();
+      if (x.isOptionalChaining()) {
+        p.print("?.");
+      } else {
+        _dot();
+      }
     }
     _nameRef(x);
     return false;
@@ -681,20 +931,51 @@ public class JsToStringGenerationVisitor extends JsVisitor {
 
   @Override
   public boolean visit(JsNumberLiteral x, JsContext ctx) {
+    String val = _stringifyNumber(x);
+    p.print(val);
+    return false;
+  }
+
+  private String _stringifyNumber(JsNumberLiteral x) {
     double dvalue = x.getValue();
     if (dvalue == 0.0 && 1.0 / dvalue == Double.NEGATIVE_INFINITY) {
       // Negative zero is distinct from 0.0 and (integer) 0
-      p.print("-0.");
-      return false;
+      return "-0";
     }
 
     long lvalue = (long) dvalue;
     if (lvalue == dvalue) {
-      p.print(Long.toString(lvalue));
+      String longVal = Long.toString(lvalue);
+      if (minifyLiterals && lvalue != 0) {
+        int trailingZeros = numberOfTrailingDecZeros(longVal);
+        if (trailingZeros > 2) {
+          // print 1000 as 1e3, keep 100 as is
+          longVal = longVal.substring(0, longVal.length() - trailingZeros) + "e" + trailingZeros;
+        } else if (Math.abs(lvalue) > MAX_DECIMAL_VALUE) {
+          // from 1e12 we may save 1 or 2 bytes by using the hex code
+          longVal = (lvalue < 0 ? "-0x" : "0x") + Long.toString(Math.abs(lvalue), 16);
+        }
+      }
+      return longVal;
     } else {
-      p.print(Double.toString(dvalue));
+      String doubleVal = Double.toString(dvalue);
+      if (minifyLiterals) {
+        if (doubleVal.startsWith("0.")) {
+          doubleVal = doubleVal.substring(1);
+        } else if (doubleVal.startsWith("-0.")) {
+          doubleVal = "-" + doubleVal.substring(2);
+        }
+      }
+      return doubleVal;
     }
-    return false;
+  }
+
+  private int numberOfTrailingDecZeros(String longVal) {
+    int idx = longVal.length() - 1;
+    while (longVal.charAt(idx) == '0') {
+      idx--;
+    }
+    return longVal.length() - idx - 1;
   }
 
   @Override
@@ -790,8 +1071,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     _return();
     JsExpression expr = x.getExpr();
     if (expr != null) {
-      _space();
-      accept(expr);
+      _printReturnExpression(expr);
     }
     return false;
   }
@@ -866,7 +1146,17 @@ public class JsToStringGenerationVisitor extends JsVisitor {
 
   @Override
   public boolean visit(JsVars x, JsContext ctx) {
-    _var();
+    switch (x.getVarKind()) {
+      case LET:
+        p.print(LET);
+        break;
+      case CONST:
+        p.print(CONST);
+        break;
+      default:
+        _var();
+        break;
+    }
     _space();
     boolean sep = false;
     for (JsVar var : x) {
@@ -886,6 +1176,60 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     _nestedPush(x.getBody(), false);
     accept(x.getBody());
     _nestedPop(x.getBody());
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsYield x, JsContext ctx) {
+    p.print(YIELD);
+    if (x.isDelegating()) {
+      p.print('*');
+    }
+    if (x.getExpression() != null) {
+      _space();
+      accept(x.getExpression());
+    }
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsSpread x, JsContext ctx) {
+    p.print(SPREAD);
+    accept(x.getExpression());
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsRestParameter x, JsContext ctx) {
+    p.print(SPREAD);
+    _nameDef(x.getName());
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsSuperRef x, JsContext ctx) {
+    p.print(SUPER);
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsTemplateLiteral x, JsContext ctx) {
+    if (x.getTag() != null) {
+      accept(x.getTag());
+    }
+    p.print('`');
+    List<String> strings = x.getStringParts();
+    List<JsExpression> exprs = x.getExpressionParts();
+    for (int i = 0; i < strings.size(); i++) {
+      // Print the raw string part (no escaping of backtick internals needed at AST level)
+      p.print(strings.get(i));
+      if (i < exprs.size()) {
+        p.print("${");
+        accept(exprs.get(i));
+        p.print('}');
+      }
+    }
+    p.print('`');
     return false;
   }
 
@@ -1003,15 +1347,15 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   }
 
   private void _break() {
-    p.print(CHARS_BREAK);
+    p.print(BREAK);
   }
 
   private void _case() {
-    p.print(CHARS_CASE);
+    p.print(CASE);
   }
 
   private void _catch() {
-    p.print(CHARS_CATCH);
+    p.print(CATCH);
   }
 
   private void _colon() {
@@ -1019,19 +1363,19 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   }
 
   private void _continue() {
-    p.print(CHARS_CONTINUE);
+    p.print(CONTINUE);
   }
 
   private void _debugger() {
-    p.print(CHARS_DEBUGGER);
+    p.print(DEBUGGER);
   }
 
   private void _default() {
-    p.print(CHARS_DEFAULT);
+    p.print(DEFAULT);
   }
 
   private void _do() {
-    p.print(CHARS_DO);
+    p.print(DO);
   }
 
   private void _dot() {
@@ -1039,31 +1383,31 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   }
 
   private void _else() {
-    p.print(CHARS_ELSE);
+    p.print(ELSE);
   }
 
   private void _false() {
-    p.print(CHARS_FALSE);
+    p.print(FALSE);
   }
 
   private void _finally() {
-    p.print(CHARS_FINALLY);
+    p.print(FINALLY);
   }
 
   private void _for() {
-    p.print(CHARS_FOR);
+    p.print(FOR);
   }
 
   private void _function() {
-    p.print(CHARS_FUNCTION);
+    p.print(FUNCTION);
   }
 
   private void _if() {
-    p.print(CHARS_IF);
+    p.print(IF);
   }
 
   private void _in() {
-    p.print(CHARS_IN);
+    p.print(IN);
   }
 
   private void _lbrace() {
@@ -1121,11 +1465,11 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   }
 
   private void _new() {
-    p.print(CHARS_NEW);
+    p.print(NEW);
   }
 
   private void _null() {
-    p.print(CHARS_NULL);
+    p.print(NULL);
   }
 
   private boolean _parenCalc(JsExpression parent, JsExpression child,
@@ -1202,7 +1546,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   }
 
   private void _return() {
-    p.print(CHARS_RETURN);
+    p.print(RETURN);
   }
 
   private void _rparen() {
@@ -1237,6 +1581,24 @@ public class JsToStringGenerationVisitor extends JsVisitor {
 
   private void _space() {
     p.print(' ');
+  }
+
+  private void _printReturnExpression(JsExpression arg) {
+    boolean space = true;
+    if (arg instanceof JsBooleanLiteral) {
+      space = !minifyLiterals;
+    } else if (arg instanceof JsPrefixOperation) {
+      space = ((JsPrefixOperation) arg).getOperator().isKeyword();
+    } else if (arg instanceof JsNumberLiteral) {
+      String value = _stringifyNumber((JsNumberLiteral) arg);
+      space = value.charAt(0) != '-' && value.charAt(0) != '.';
+    }
+    if (space) {
+      _space();
+    } else {
+      _spaceOpt();
+    }
+    accept(arg);
   }
 
   /**
@@ -1280,31 +1642,31 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   }
 
   private void _switch() {
-    p.print(CHARS_SWITCH);
+    p.print(SWITCH);
   }
 
   private void _this() {
-    p.print(CHARS_THIS);
+    p.print(THIS);
   }
 
   private void _throw() {
-    p.print(CHARS_THROW);
+    p.print(THROW);
   }
 
   private void _true() {
-    p.print(CHARS_TRUE);
+    p.print(TRUE);
   }
 
   private void _try() {
-    p.print(CHARS_TRY);
+    p.print(TRY);
   }
 
   private void _var() {
-    p.print(CHARS_VAR);
+    p.print(VAR);
   }
 
   private void _while() {
-    p.print(CHARS_WHILE);
+    p.print(WHILE);
   }
 
   private void indent() {

@@ -255,7 +255,43 @@ public class TokenStream {
         DEBUGGER    = 146,
         SCRIPT      = 147,   // top-level node for entire script
 
-        LAST_TOKEN  = 147,
+        // Modern ES6+ keyword tokens
+        LET         = 148,  // let keyword
+        CONST       = 149,  // const keyword
+        CLASS       = 150,  // class keyword
+        EXTENDS     = 151,  // extends keyword
+        SUPER       = 152,  // super keyword
+        STATIC      = 153,  // static keyword
+        YIELD       = 154,  // yield keyword
+        ASYNC       = 155,  // async keyword
+        AWAIT       = 156,  // await keyword
+        OF          = 157,  // of keyword (contextual, for...of)
+
+        // Modern ES6+ punctuation tokens
+        ARROW       = 158,  // => arrow
+        SPREAD      = 159,  // ... spread/rest
+        TEMPLATE    = 160,  // template literal string
+        EXPONENT    = 161,  // ** exponentiation
+        NULLCOALESCE = 162, // ?? nullish coalescing
+        OPTCHAIN    = 163,  // ?. optional chaining
+
+        // Modern ES6+ AST node types (not returned by scanner)
+        ARROWFUNC   = 164,  // arrow function node
+        FOROF       = 165,  // for...of node
+        TEMPLATELIT = 166,  // template literal node
+        CLASSNODE   = 167,  // class declaration/expression node
+        DESTRUCTURE = 168,  // destructuring pattern node
+        REST        = 169,  // rest parameter/element node
+        COMPUTED_PROP = 170,  // computed property key [expr]
+        CLASSMEMBER = 171,  // class member node
+        YIELDEXPR   = 172,  // yield expression node
+        AWAITEXPR   = 173,  // await expression node
+        SUPERREF    = 174,  // super reference node
+        TEMPLATE_HEAD   = 175,  // template literal head (before first ${)
+        TEMPLATE_MIDDLE = 176,  // template literal middle (between } and ${)
+        TEMPLATE_TAIL   = 177,  // template literal tail (after last } to `)
+
+        LAST_TOKEN  = 177,
 
         // This value is only used as a return value for getTokenHelper,
         // which is only called from getToken and exists to avoid an excessive
@@ -416,6 +452,36 @@ public class TokenStream {
                 case NEWLOCAL:        return "newlocal";
                 case USELOCAL:        return "uselocal";
                 case SCRIPT:          return "script";
+                case LET:             return "let";
+                case CONST:           return "const";
+                case CLASS:           return "class";
+                case EXTENDS:         return "extends";
+                case SUPER:           return "super";
+                case STATIC:          return "static";
+                case YIELD:           return "yield";
+                case ASYNC:           return "async";
+                case AWAIT:           return "await";
+                case OF:              return "of";
+                case ARROW:           return "arrow";
+                case SPREAD:          return "spread";
+                case TEMPLATE:        return "template";
+                case EXPONENT:        return "exponent";
+                case NULLCOALESCE:    return "nullcoalesce";
+                case OPTCHAIN:        return "optchain";
+                case ARROWFUNC:       return "arrowfunc";
+                case FOROF:           return "forof";
+                case TEMPLATELIT:     return "templatelit";
+                case CLASSNODE:       return "classnode";
+                case DESTRUCTURE:     return "destructure";
+                case REST:            return "rest";
+                case COMPUTED_PROP:   return "computed_prop";
+                case CLASSMEMBER:     return "classmember";
+                case YIELDEXPR:       return "yieldexpr";
+                case AWAITEXPR:       return "awaitexpr";
+                case SUPERREF:        return "superref";
+                case TEMPLATE_HEAD:   return "template_head";
+                case TEMPLATE_MIDDLE: return "template_middle";
+                case TEMPLATE_TAIL:   return "template_tail";
             }
             return "<unknown="+token+">";
         }
@@ -482,18 +548,27 @@ public class TokenStream {
             Id_while         = WHILE,
             Id_with          = WITH,
 
+            // ES6+ keywords (no longer RESERVED)
+            Id_class         = CLASS,
+            Id_const         = CONST,
+            Id_extends       = EXTENDS,
+            Id_let           = LET,
+            Id_super         = SUPER,
+            Id_static        = STATIC,
+            Id_yield         = YIELD,
+            Id_async         = ASYNC,
+            Id_await         = AWAIT,
+            Id_of            = OF,
+
             // the following are #ifdef RESERVE_JAVA_KEYWORDS in jsscan.c
             Id_abstract      = RESERVED,
             Id_boolean       = RESERVED,
             Id_byte          = RESERVED,
             Id_catch         = CATCH,
             Id_char          = RESERVED,
-            Id_class         = RESERVED,
-            Id_const         = RESERVED,
             Id_debugger      = DEBUGGER,
             Id_double        = RESERVED,
             Id_enum          = RESERVED,
-            Id_extends       = RESERVED,
             Id_final         = RESERVED,
             Id_finally       = FINALLY,
             Id_float         = RESERVED,
@@ -510,8 +585,6 @@ public class TokenStream {
             Id_protected     = RESERVED,
             Id_public        = RESERVED,
             Id_short         = RESERVED,
-            Id_static        = RESERVED,
-            Id_super         = RESERVED,
             Id_synchronized  = RESERVED,
             Id_throw         = THROW,
             Id_throws        = RESERVED,
@@ -521,17 +594,21 @@ public class TokenStream {
 
         int id;
         String s = name;
-// #generated# Last update: 2001-06-01 17:45:01 CEST
+// #generated# Updated for ES6+ keywords
         L0: { id = 0; String X = null; int c;
             L: switch (s.length()) {
             case 2: c=s.charAt(1);
-                if (c=='f') { if (s.charAt(0)=='i') {id=Id_if; break L0;} }
+                if (c=='f') {
+                    if (s.charAt(0)=='i') {id=Id_if; break L0;}
+                    else if (s.charAt(0)=='o') {id=Id_of; break L0;}
+                }
                 else if (c=='n') { if (s.charAt(0)=='i') {id=Id_in; break L0;} }
                 else if (c=='o') { if (s.charAt(0)=='d') {id=Id_do; break L0;} }
                 break L;
             case 3: switch (s.charAt(0)) {
                 case 'f': if (s.charAt(2)=='r' && s.charAt(1)=='o') {id=Id_for; break L0;} break L;
                 case 'i': if (s.charAt(2)=='t' && s.charAt(1)=='n') {id=Id_int; break L0;} break L;
+                case 'l': if (s.charAt(2)=='t' && s.charAt(1)=='e') {id=Id_let; break L0;} break L;
                 case 'n': if (s.charAt(2)=='w' && s.charAt(1)=='e') {id=Id_new; break L0;} break L;
                 case 't': if (s.charAt(2)=='y' && s.charAt(1)=='r') {id=Id_try; break L0;} break L;
                 case 'v': if (s.charAt(2)=='r' && s.charAt(1)=='a') {id=Id_var; break L0;} break L;
@@ -557,9 +634,15 @@ public class TokenStream {
                 case 'w': X="with";id=Id_with; break L;
                 } break L;
             case 5: switch (s.charAt(2)) {
-                case 'a': X="class";id=Id_class; break L;
+                case 'a': c=s.charAt(0);
+                    if (c=='c') { X="class";id=Id_class; }
+                    else if (c=='a') { X="await";id=Id_await; }
+                    break L;
                 case 'e': X="break";id=Id_break; break L;
-                case 'i': X="while";id=Id_while; break L;
+                case 'i': c=s.charAt(0);
+                    if (c=='w') { X="while";id=Id_while; }
+                    else if (c=='y') { X="yield";id=Id_yield; }
+                    break L;
                 case 'l': X="false";id=Id_false; break L;
                 case 'n': c=s.charAt(0);
                     if (c=='c') { X="const";id=Id_const; }
@@ -572,6 +655,7 @@ public class TokenStream {
                 case 'p': X="super";id=Id_super; break L;
                 case 'r': X="throw";id=Id_throw; break L;
                 case 't': X="catch";id=Id_catch; break L;
+                case 'y': X="async";id=Id_async; break L;
                 } break L;
             case 6: switch (s.charAt(1)) {
                 case 'a': X="native";id=Id_native; break L;
@@ -1106,12 +1190,43 @@ public class TokenStream {
         case '(': return LP;
         case ')': return GWT;
         case ',': return COMMA;
-        case '?': return HOOK;
+        case '?':
+            if (in.match('?')) {
+                if (in.match('=')) {
+                    this.op = NULLCOALESCE;
+                    return ASSIGN;
+                }
+                return NULLCOALESCE;
+            } else if (in.match('.')) {
+                // Distinguish ?. (optional chaining) from ?.digits (conditional + number)
+                int next = in.peek();
+                if (!isDigit(next)) {
+                    return OPTCHAIN;
+                }
+                in.unread();  // put back the '.'
+                return HOOK;
+            }
+            return HOOK;
         case ':': return COLON;
-        case '.': return DOT;
+        case '.':
+            if (in.match('.')) {
+                if (in.match('.')) {
+                    return SPREAD;
+                }
+                // Only two dots - not valid, put back one
+                in.unread();
+            }
+            return DOT;
+
+        case '`':
+            return scanTemplateLiteral();
 
         case '|':
             if (in.match('|')) {
+                if (in.match('=')) {
+                    this.op = OR;
+                    return ASSIGN;
+                }
                 return OR;
             } else if (in.match('=')) {
                 this.op = BITOR;
@@ -1130,6 +1245,10 @@ public class TokenStream {
 
         case '&':
             if (in.match('&')) {
+                if (in.match('=')) {
+                    this.op = AND;
+                    return ASSIGN;
+                }
                 return AND;
             } else if (in.match('=')) {
                 this.op = BITAND;
@@ -1145,6 +1264,8 @@ public class TokenStream {
                 else
                     this.op = EQ;
                 return EQOP;
+            } else if (in.match('>')) {
+                return ARROW;
             } else {
                 this.op = NOP;
                 return ASSIGN;
@@ -1222,7 +1343,13 @@ public class TokenStream {
             }
 
         case '*':
-            if (in.match('=')) {
+            if (in.match('*')) {
+                if (in.match('=')) {
+                    this.op = EXPONENT;
+                    return ASSIGN;
+                }
+                return EXPONENT;
+            } else if (in.match('=')) {
                 this.op = MUL;
                 return ASSIGN;
             } else {
@@ -1573,6 +1700,81 @@ public class TokenStream {
         in.unread();
         return true;
       }
+    }
+
+    /**
+     * Scans a template literal (backtick string).
+     * Called when the opening backtick is consumed.
+     * Returns TEMPLATE (no interpolation), or TEMPLATE_HEAD (has interpolation).
+     * The string part is stored in this.string.
+     */
+    private int scanTemplateLiteral() throws IOException {
+        stringBufferTop = 0;
+        int c;
+        while ((c = in.read()) != EOF_CHAR) {
+            if (c == '`') {
+                // End of template - no interpolation
+                this.string = getStringFromBuffer();
+                return TEMPLATE;
+            }
+            if (c == '\\') {
+                addToString(c);
+                c = in.read();
+                if (c == EOF_CHAR) {
+                    break;
+                }
+                addToString(c);
+                continue;
+            }
+            if (c == '$') {
+                int next = in.peek();
+                if (next == '{') {
+                    in.read(); // consume '{'
+                    this.string = getStringFromBuffer();
+                    return TEMPLATE_HEAD;
+                }
+            }
+            addToString(c);
+        }
+        reportSyntaxError("msg.unterminated.string.lit", null);
+        return ERROR;
+    }
+
+    /**
+     * Scans the next part of a template literal after an interpolation expression.
+     * Called by the parser after it has consumed the expression and the closing '}'.
+     * Returns TEMPLATE_MIDDLE (more interpolations follow) or TEMPLATE_TAIL (end).
+     * The string part is stored in this.string.
+     */
+    public int scanTemplatePart() throws IOException {
+        stringBufferTop = 0;
+        int c;
+        while ((c = in.read()) != EOF_CHAR) {
+            if (c == '`') {
+                this.string = getStringFromBuffer();
+                return TEMPLATE_TAIL;
+            }
+            if (c == '\\') {
+                addToString(c);
+                c = in.read();
+                if (c == EOF_CHAR) {
+                    break;
+                }
+                addToString(c);
+                continue;
+            }
+            if (c == '$') {
+                int next = in.peek();
+                if (next == '{') {
+                    in.read(); // consume '{'
+                    this.string = getStringFromBuffer();
+                    return TEMPLATE_MIDDLE;
+                }
+            }
+            addToString(c);
+        }
+        reportSyntaxError("msg.unterminated.string.lit", null);
+        return ERROR;
     }
 
     private String getStringFromBuffer() {

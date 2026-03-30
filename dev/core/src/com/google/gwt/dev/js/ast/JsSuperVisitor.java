@@ -13,6 +13,8 @@
  */
 package com.google.gwt.dev.js.ast;
 
+import com.google.gwt.dev.js.ast.JsClass.JsClassMember;
+import com.google.gwt.dev.js.ast.JsDestructuring.JsDestructuringElement;
 import com.google.gwt.dev.js.ast.JsVars.JsVar;
 
 /**
@@ -265,6 +267,73 @@ public class JsSuperVisitor extends JsVisitor {
     endVisit((JsStatement) x, ctx);
   }
 
+  // ES6+ node types
+
+  @Override
+  public void endVisit(JsArrowFunction x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsAwait x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsClass x, JsContext ctx) {
+    endVisit((JsStatement) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsClassMember x, JsContext ctx) {
+    endVisit((JsNode) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsComputedPropertyKey x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsDestructuring x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsDestructuringElement x, JsContext ctx) {
+    endVisit((JsNode) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsForOf x, JsContext ctx) {
+    endVisit((JsStatement) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsRestParameter x, JsContext ctx) {
+    endVisit((JsNode) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsSpread x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsSuperRef x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsTemplateLiteral x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public void endVisit(JsYield x, JsContext ctx) {
+    endVisit((JsExpression) x, ctx);
+  }
+
   @Override
   public boolean visit(JsArrayAccess x, JsContext ctx) {
     return visit((JsExpression) x, ctx);
@@ -506,6 +575,73 @@ public class JsSuperVisitor extends JsVisitor {
   @Override
   public boolean visit(JsWhile x, JsContext ctx) {
     return visit((JsStatement) x, ctx);
+  }
+
+  // ES6+ node types
+
+  @Override
+  public boolean visit(JsArrowFunction x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsAwait x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsClass x, JsContext ctx) {
+    return visit((JsStatement) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsClassMember x, JsContext ctx) {
+    return visit((JsNode) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsComputedPropertyKey x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsDestructuring x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsDestructuringElement x, JsContext ctx) {
+    return visit((JsNode) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsForOf x, JsContext ctx) {
+    return visit((JsStatement) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsRestParameter x, JsContext ctx) {
+    return visit((JsNode) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsSpread x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsSuperRef x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsTemplateLiteral x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsYield x, JsContext ctx) {
+    return visit((JsExpression) x, ctx);
   }
 
 }

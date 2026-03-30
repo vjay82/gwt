@@ -215,13 +215,14 @@
       </move>
 
       <!-- add an extra wildcard import to relocated rpc/rf classes that need to reference existing types -->
-      <replace file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/AbstractXsrfProtectedServiceServlet.java" token="${line.separator}/**" value="import com.google.gwt.user.server.rpc.*;${line.separator}${line.separator}/**" />
-      <replace file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/RPC.java" token="${line.separator}/**" value="import com.google.gwt.user.server.rpc.*;${line.separator}${line.separator}/**" />
+      <!-- Use replaceregexp with \n instead of ${line.separator} to handle LF line endings on Windows -->
+      <replaceregexp file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/AbstractXsrfProtectedServiceServlet.java" match="\n/\*\*" replace="&#10;import com.google.gwt.user.server.rpc.*;&#10;&#10;/**" />
+      <replaceregexp file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/RPC.java" match="\n/\*\*" replace="&#10;import com.google.gwt.user.server.rpc.*;&#10;&#10;/**" />
       <replace file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/RPC.java" token="com.google.gwt.examples.rpc.server.AdvancedExample" value="com.google.gwt.examples.rpc.server.jakarta.AdvancedExample" />
-      <replace file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/RemoteServiceServlet.java" token="${line.separator}/**" value="import com.google.gwt.user.server.rpc.*;${line.separator}${line.separator}/**" />
-      <replace file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/SerializationPolicyClient.java" token="${line.separator}/**" value="import com.google.gwt.user.server.rpc.*;${line.separator}${line.separator}/**" />
-      <replace file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/AbstractRemoteServiceServlet.java" token="${line.separator}/**" value="import com.google.gwt.user.server.rpc.*;${line.separator}${line.separator}/**" />
-      <replace file="${project.build}/jakarta-src/com/google/web/bindery/requestfactory/server/jakarta/RequestFactoryServlet.java" token="${line.separator}/**" value="import com.google.web.bindery.requestfactory.server.*;${line.separator}${line.separator}/**"/>
+      <replaceregexp file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/RemoteServiceServlet.java" match="\n/\*\*" replace="&#10;import com.google.gwt.user.server.rpc.*;&#10;&#10;/**" />
+      <replaceregexp file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/SerializationPolicyClient.java" match="\n/\*\*" replace="&#10;import com.google.gwt.user.server.rpc.*;&#10;&#10;/**" />
+      <replaceregexp file="${project.build}/jakarta-src/com/google/gwt/user/server/rpc/jakarta/AbstractRemoteServiceServlet.java" match="\n/\*\*" replace="&#10;import com.google.gwt.user.server.rpc.*;&#10;&#10;/**" />
+      <replaceregexp file="${project.build}/jakarta-src/com/google/web/bindery/requestfactory/server/jakarta/RequestFactoryServlet.java" match="\n/\*\*" replace="&#10;import com.google.web.bindery.requestfactory.server.*;&#10;&#10;/**"/>
 
       <!-- Compile a specific gwt-user jar just for jakarta, which will be only used then to produce gwt-servlet-jakarta.jar -->
       <gwt.javac

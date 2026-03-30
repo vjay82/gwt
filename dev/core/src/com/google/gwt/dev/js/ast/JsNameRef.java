@@ -24,6 +24,7 @@ public final class JsNameRef extends JsExpression implements CanBooleanEval, Has
   private String ident;
   private JsName name;
   private JsExpression qualifier;
+  private boolean optionalChaining;
 
   public JsNameRef(SourceInfo sourceInfo, JsName name) {
     super(sourceInfo);
@@ -106,6 +107,14 @@ public final class JsNameRef extends JsExpression implements CanBooleanEval, Has
 
   public void setQualifier(JsExpression qualifier) {
     this.qualifier = qualifier;
+  }
+
+  public boolean isOptionalChaining() {
+    return optionalChaining;
+  }
+
+  public void setOptionalChaining(boolean optionalChaining) {
+    this.optionalChaining = optionalChaining;
   }
 
   @Override

@@ -24,6 +24,7 @@ import com.google.gwt.dev.js.ast.JsEmpty;
 import com.google.gwt.dev.js.ast.JsExprStmt;
 import com.google.gwt.dev.js.ast.JsFor;
 import com.google.gwt.dev.js.ast.JsForIn;
+import com.google.gwt.dev.js.ast.JsForOf;
 import com.google.gwt.dev.js.ast.JsIf;
 import com.google.gwt.dev.js.ast.JsLabel;
 import com.google.gwt.dev.js.ast.JsReturn;
@@ -103,6 +104,14 @@ public class JsRequiresSemiVisitor extends JsVisitor {
 
   @Override
   public boolean visit(JsForIn x, JsContext ctx) {
+    if (x.getBody() instanceof JsEmpty) {
+      needsSemicolon = true;
+    }
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsForOf x, JsContext ctx) {
     if (x.getBody() instanceof JsEmpty) {
       needsSemicolon = true;
     }

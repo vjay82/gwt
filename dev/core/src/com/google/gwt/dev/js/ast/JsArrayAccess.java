@@ -24,6 +24,8 @@ public final class JsArrayAccess extends JsExpression {
 
   private JsExpression indexExpr;
 
+  private boolean optionalChaining;
+
   public JsArrayAccess(SourceInfo sourceInfo) {
     super(sourceInfo);
   }
@@ -63,6 +65,14 @@ public final class JsArrayAccess extends JsExpression {
 
   public void setIndexExpr(JsExpression indexExpr) {
     this.indexExpr = indexExpr;
+  }
+
+  public boolean isOptionalChaining() {
+    return optionalChaining;
+  }
+
+  public void setOptionalChaining(boolean optionalChaining) {
+    this.optionalChaining = optionalChaining;
   }
 
   @Override

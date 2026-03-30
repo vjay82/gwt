@@ -20,6 +20,8 @@ import com.google.gwt.dev.jjs.SourceInfo;
 import com.google.gwt.dev.jjs.SourceOrigin;
 import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsArrowFunction;
+import com.google.gwt.dev.js.ast.JsAwait;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBinaryOperator;
 import com.google.gwt.dev.js.ast.JsBlock;
@@ -27,6 +29,8 @@ import com.google.gwt.dev.js.ast.JsBooleanLiteral;
 import com.google.gwt.dev.js.ast.JsBreak;
 import com.google.gwt.dev.js.ast.JsCase;
 import com.google.gwt.dev.js.ast.JsCatch;
+import com.google.gwt.dev.js.ast.JsClass;
+import com.google.gwt.dev.js.ast.JsComputedPropertyKey;
 import com.google.gwt.dev.js.ast.JsConditional;
 import com.google.gwt.dev.js.ast.JsContinue;
 import com.google.gwt.dev.js.ast.JsDebugger;
@@ -37,6 +41,7 @@ import com.google.gwt.dev.js.ast.JsExprStmt;
 import com.google.gwt.dev.js.ast.JsExpression;
 import com.google.gwt.dev.js.ast.JsFor;
 import com.google.gwt.dev.js.ast.JsForIn;
+import com.google.gwt.dev.js.ast.JsForOf;
 import com.google.gwt.dev.js.ast.JsFunction;
 import com.google.gwt.dev.js.ast.JsIf;
 import com.google.gwt.dev.js.ast.JsInvocation;
@@ -52,18 +57,23 @@ import com.google.gwt.dev.js.ast.JsParameter;
 import com.google.gwt.dev.js.ast.JsPostfixOperation;
 import com.google.gwt.dev.js.ast.JsPrefixOperation;
 import com.google.gwt.dev.js.ast.JsRegExp;
+import com.google.gwt.dev.js.ast.JsRestParameter;
 import com.google.gwt.dev.js.ast.JsReturn;
 import com.google.gwt.dev.js.ast.JsRootScope;
 import com.google.gwt.dev.js.ast.JsScope;
+import com.google.gwt.dev.js.ast.JsSpread;
 import com.google.gwt.dev.js.ast.JsStatement;
 import com.google.gwt.dev.js.ast.JsStringLiteral;
+import com.google.gwt.dev.js.ast.JsSuperRef;
 import com.google.gwt.dev.js.ast.JsSwitch;
+import com.google.gwt.dev.js.ast.JsTemplateLiteral;
 import com.google.gwt.dev.js.ast.JsThisRef;
 import com.google.gwt.dev.js.ast.JsThrow;
 import com.google.gwt.dev.js.ast.JsTry;
 import com.google.gwt.dev.js.ast.JsUnaryOperator;
 import com.google.gwt.dev.js.ast.JsVars;
 import com.google.gwt.dev.js.ast.JsWhile;
+import com.google.gwt.dev.js.ast.JsYield;
 import com.google.gwt.dev.js.rhino.Context;
 import com.google.gwt.dev.js.rhino.ErrorReporter;
 import com.google.gwt.dev.js.rhino.EvaluatorException;
@@ -346,6 +356,56 @@ public class JsParser {
       case TokenStream.LABEL:
         return mapLabel(node);
 
+      // ===== ES6+ node types =====
+
+      case TokenStream.LET:
+        return mapLetOrConst(node, JsVars.VarKind.LET);
+
+      case TokenStream.CONST:
+        return mapLetOrConst(node, JsVars.VarKind.CONST);
+
+      case TokenStream.ARROWFUNC:
+        return mapArrowFunction(node);
+
+      case TokenStream.FOROF:
+        return mapForOfStatement(node);
+
+      case TokenStream.TEMPLATELIT:
+        return mapTemplateLiteral(node);
+
+      case TokenStream.CLASSNODE:
+        return mapClassDeclaration(node);
+
+      case TokenStream.CLASSMEMBER:
+        return mapClassMember(node);
+
+      case TokenStream.SPREAD:
+        return mapSpread(node);
+
+      case TokenStream.REST:
+        return mapRestParameter(node);
+
+      case TokenStream.YIELDEXPR:
+        return mapYield(node);
+
+      case TokenStream.AWAITEXPR:
+        return mapAwait(node);
+
+      case TokenStream.SUPERREF:
+        return new JsSuperRef(makeSourceInfo(node));
+
+      case TokenStream.EXPONENT:
+        return mapBinaryOperation(JsBinaryOperator.EXP, node);
+
+      case TokenStream.NULLCOALESCE:
+        return mapBinaryOperation(JsBinaryOperator.NULLISH_COALESCE, node);
+
+      case TokenStream.OPTCHAIN:
+        return mapOptionalChain(node);
+
+      case TokenStream.COMPUTED_PROP:
+        return mapComputedPropertyKey(node);
+
       default:
         int tokenType = node.getType();
         throw createParserException("Unexpected top-level token type: "
@@ -419,6 +479,18 @@ public class JsParser {
 
       case TokenStream.URSH:
         return mapBinaryOperation(JsBinaryOperator.ASG_SHRU, asgNode);
+
+      case TokenStream.EXPONENT:
+        return mapBinaryOperation(JsBinaryOperator.ASG_EXP, asgNode);
+
+      case TokenStream.OR:
+        return mapBinaryOperation(JsBinaryOperator.ASG_OR, asgNode);
+
+      case TokenStream.AND:
+        return mapBinaryOperation(JsBinaryOperator.ASG_AND, asgNode);
+
+      case TokenStream.NULLCOALESCE:
+        return mapBinaryOperation(JsBinaryOperator.ASG_NULLISH, asgNode);
 
       default:
         throw createParserException("Unknown assignment operator variant: "
@@ -701,6 +773,16 @@ public class JsParser {
     //
     SourceInfo fnSourceInfo = makeSourceInfo(fnNode);
     JsFunction toFn = new JsFunction(fnSourceInfo, getScope(), toFnName);
+
+    // Read generator/async flags from LOCAL_PROP (set by createFunctionEx).
+    // Bit 0 = generator, bit 1 = async.
+    int fnFlags = fnNode.getIntProp(Node.LOCAL_PROP, 0);
+    if ((fnFlags & 1) != 0) {
+      toFn.setGenerator(true);
+    }
+    if ((fnFlags & 2) != 0) {
+      toFn.setAsync(true);
+    }
 
     // Creating a function also creates a new scope, which we push onto
     // the scope stack.
@@ -1251,6 +1333,257 @@ public class JsParser {
     //
     throw createParserException("Internal error: unexpected token 'with'",
         withNode);
+  }
+
+  // ===== ES6+ mapping methods =====
+
+  private JsVars mapLetOrConst(Node varNode, JsVars.VarKind kind)
+      throws JsParserException {
+    SourceInfo info = makeSourceInfo(varNode);
+    pushSourceInfo(info);
+    JsVars toVars = new JsVars(info, kind);
+    Node fromVar = varNode.getFirstChild();
+    while (fromVar != null) {
+      String fromName = fromVar.getString();
+      JsName toName = getScope().declareName(fromName);
+      JsVars.JsVar toVar = new JsVars.JsVar(makeSourceInfo(fromVar), toName);
+      Node fromInit = fromVar.getFirstChild();
+      if (fromInit != null) {
+        toVar.setInitExpr(mapExpression(fromInit));
+      }
+      toVars.add(toVar);
+      fromVar = fromVar.getNext();
+    }
+    popSourceInfo();
+    return toVars;
+  }
+
+  private JsExpression mapArrowFunction(Node arrowNode)
+      throws JsParserException {
+    // ARROWFUNC children: [nameNode, argsNode, bodyNode]
+    // intDatum: 1 = async, 0 = not async
+    Node fromNameNode = arrowNode.getFirstChild();
+    Node fromArgsNode = fromNameNode.getNext();
+    Node fromBodyNode = fromArgsNode.getNext();
+
+    SourceInfo info = makeSourceInfo(arrowNode);
+    JsArrowFunction arrow = new JsArrowFunction(info);
+
+    if (arrowNode.getIntDatum() == 1) {
+      arrow.setAsync(true);
+    }
+
+    // Map parameters.
+    Node fromParam = fromArgsNode.getFirstChild();
+    while (fromParam != null) {
+      String paramName = fromParam.getString();
+      JsName name = getScope().declareName(paramName);
+      arrow.getParameters().add(new JsParameter(info, name));
+      fromParam = fromParam.getNext();
+    }
+
+    // Map body.
+    arrow.setBody(mapBlock(fromBodyNode));
+
+    return arrow;
+  }
+
+  private JsStatement mapForOfStatement(Node forOfNode)
+      throws JsParserException {
+    // FOROF children: [lhs, iterable, body]
+    Node fromIter = forOfNode.getFirstChild();
+    Node fromIterable = fromIter.getNext();
+    Node fromBody = fromIterable.getNext();
+
+    SourceInfo info = makeSourceInfo(forOfNode);
+    JsForOf forOf;
+
+    if (fromIter.getType() == TokenStream.VAR
+        || fromIter.getType() == TokenStream.LET
+        || fromIter.getType() == TokenStream.CONST) {
+      // Named iterator variable: for (let x of ...)
+      Node fromIterVarName = fromIter.getFirstChild();
+      String fromName = fromIterVarName.getString();
+      JsName toName = getScope().declareName(fromName);
+      forOf = new JsForOf(info, toName);
+    } else {
+      // Expression lhs: for (x of ...)
+      forOf = new JsForOf(info);
+      forOf.setIterExpr(mapExpression(fromIter));
+    }
+
+    forOf.setIterableExpr(mapExpression(fromIterable));
+
+    JsStatement bodyStmt = mapStatement(fromBody);
+    forOf.setBody(bodyStmt != null ? bodyStmt : new JsEmpty(info));
+
+    return forOf;
+  }
+
+  private JsExpression mapTemplateLiteral(Node templateNode)
+      throws JsParserException {
+    SourceInfo info = makeSourceInfo(templateNode);
+    JsTemplateLiteral template = new JsTemplateLiteral(info);
+
+    // String parts are stored as '\0'-delimited in SPECIAL_PROP_PROP.
+    String rawContent = (String) templateNode.getProp(Node.SPECIAL_PROP_PROP);
+    if (rawContent == null) {
+      rawContent = "";
+    }
+    // Split on null character to recover individual string parts.
+    String[] parts = rawContent.split("\0", -1);
+    for (String part : parts) {
+      template.getStringParts().add(part);
+    }
+
+    // Children are the interpolation expression nodes.
+    Node child = templateNode.getFirstChild();
+    while (child != null) {
+      template.getExpressionParts().add(mapExpression(child));
+      child = child.getNext();
+    }
+
+    return template;
+  }
+
+  private JsStatement mapClassDeclaration(Node classNode)
+      throws JsParserException {
+    // CLASSNODE children: [nameNode, superNode, bodyBlock]
+    Node fromName = classNode.getFirstChild();
+    Node fromSuper = fromName.getNext();
+    Node fromBody = fromSuper.getNext();
+
+    SourceInfo info = makeSourceInfo(classNode);
+    JsClass jsClass = new JsClass(info);
+
+    // Class name (may be empty for anonymous class expressions).
+    String name = fromName.getString();
+    if (name != null && name.length() > 0) {
+      jsClass.setName(getScope().declareName(name));
+    }
+
+    // Super class expression (VOID node means no extends clause).
+    if (fromSuper.getType() != TokenStream.VOID) {
+      jsClass.setSuperExpr(mapExpression(fromSuper));
+    }
+
+    // Body: a BLOCK of CLASSMEMBER nodes.
+    Node member = fromBody.getFirstChild();
+    while (member != null) {
+      JsNode mapped = map(member);
+      if (mapped instanceof JsClass.JsClassMember) {
+        JsClass.JsClassMember classMember = (JsClass.JsClassMember) mapped;
+        // Detect constructor.
+        JsExpression nameExpr = classMember.getNameExpr();
+        if (!classMember.isStatic()
+            && nameExpr instanceof JsStringLiteral
+            && "constructor".equals(((JsStringLiteral) nameExpr).getValue())
+            && classMember.getValueExpr() instanceof JsFunction) {
+          jsClass.setConstructor((JsFunction) classMember.getValueExpr());
+        } else {
+          jsClass.getMembers().add(classMember);
+        }
+      }
+      member = member.getNext();
+    }
+
+    return jsClass;
+  }
+
+  private JsNode mapClassMember(Node memberNode) throws JsParserException {
+    // CLASSMEMBER children: [key, value]
+    // intDatum encodes flags: bit0=static, bit1=getter, bit2=setter,
+    //                         bit3=computed, bit4=generator, bit5=async
+    Node fromKey = memberNode.getFirstChild();
+    Node fromValue = fromKey.getNext();
+
+    int flags = memberNode.getIntDatum();
+    boolean isStatic = (flags & 1) != 0;
+    boolean isGetter = (flags & 2) != 0;
+    boolean isSetter = (flags & 4) != 0;
+    boolean isComputed = (flags & 8) != 0;
+
+    SourceInfo info = makeSourceInfo(memberNode);
+    JsClass.JsClassMember cm = new JsClass.JsClassMember(info);
+
+    cm.setNameExpr(mapExpression(fromKey));
+    cm.setValueExpr(mapExpression(fromValue));
+    cm.setStatic(isStatic);
+    cm.setGetter(isGetter);
+    cm.setSetter(isSetter);
+    cm.setComputed(isComputed);
+
+    return cm;
+  }
+
+  private JsExpression mapSpread(Node spreadNode) throws JsParserException {
+    Node child = spreadNode.getFirstChild();
+    return new JsSpread(makeSourceInfo(spreadNode), mapExpression(child));
+  }
+
+  private JsNode mapRestParameter(Node restNode) throws JsParserException {
+    Node child = restNode.getFirstChild();
+    String name = child.getString();
+    JsName jsName = getScope().declareName(name);
+    return new JsRestParameter(makeSourceInfo(restNode), jsName);
+  }
+
+  private JsExpression mapYield(Node yieldNode) throws JsParserException {
+    SourceInfo info = makeSourceInfo(yieldNode);
+    Node child = yieldNode.getFirstChild();
+
+    JsYield yield;
+    if (child != null) {
+      yield = new JsYield(info, mapExpression(child));
+      // intDatum encodes delegating flag when expression is present.
+      if (yieldNode.getIntDatum() == 1) {
+        yield.setDelegating(true);
+      }
+    } else {
+      yield = new JsYield(info);
+      // LOCAL_PROP encodes delegating flag when no expression.
+      if (yieldNode.getIntProp(Node.LOCAL_PROP, 0) == 1) {
+        yield.setDelegating(true);
+      }
+    }
+
+    return yield;
+  }
+
+  private JsExpression mapAwait(Node awaitNode) throws JsParserException {
+    Node child = awaitNode.getFirstChild();
+    return new JsAwait(makeSourceInfo(awaitNode), mapExpression(child));
+  }
+
+  private JsExpression mapOptionalChain(Node optChainNode)
+      throws JsParserException {
+    // OPTCHAIN children: [obj, prop]
+    Node fromObj = optChainNode.getFirstChild();
+    Node fromProp = fromObj.getNext();
+
+    SourceInfo info = makeSourceInfo(optChainNode);
+    JsExpression toObj = mapExpression(fromObj);
+
+    if (fromProp.getType() == TokenStream.STRING) {
+      // obj?.prop => property access
+      JsNameRef nameRef = new JsNameRef(info, fromProp.getString());
+      nameRef.setQualifier(toObj);
+      nameRef.setOptionalChaining(true);
+      return nameRef;
+    } else {
+      // obj?.[expr] or obj?.() => element access
+      JsExpression propExpr = mapExpression(fromProp);
+      JsArrayAccess access = new JsArrayAccess(info, toObj, propExpr);
+      access.setOptionalChaining(true);
+      return access;
+    }
+  }
+
+  private JsExpression mapComputedPropertyKey(Node node)
+      throws JsParserException {
+    Node child = node.getFirstChild();
+    return new JsComputedPropertyKey(makeSourceInfo(node),
+        mapExpression(child));
   }
 
   private void popScope() {

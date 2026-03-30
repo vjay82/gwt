@@ -118,6 +118,19 @@ public class Parser {
           this.ok = false;
           break;
         }
+      } else if (tt == ts.CLASS) {
+        ts.ungetToken(tt);
+        nf.addChildToBack(tempBlock, statement(ts));
+      } else if (tt == ts.ASYNC) {
+        // Check if this is 'async function'
+        int next = ts.peekToken();
+        if (next == ts.FUNCTION) {
+          ts.ungetToken(tt);
+          nf.addChildToBack(tempBlock, statement(ts));
+        } else {
+          ts.ungetToken(tt);
+          nf.addChildToBack(tempBlock, statement(ts));
+        }
       } else {
         ts.ungetToken(tt);
         nf.addChildToBack(tempBlock, statement(ts));
@@ -152,6 +165,8 @@ public class Parser {
         if (tt == TokenStream.FUNCTION) {
           ts.getToken();
           nf.addChildToBack(pn, function(ts, false));
+        } else if (tt == TokenStream.CLASS) {
+          nf.addChildToBack(pn, statement(ts));
         } else {
           nf.addChildToBack(pn, statement(ts));
         }
@@ -171,6 +186,12 @@ public class Parser {
   private Object function(TokenStream ts, boolean isExpr) throws IOException,
       JavaScriptException {
     int baseLineno = ts.getLineno(); // line number where source starts
+
+    // Check for generator: function*
+    boolean isGenerator = ts.matchToken(ts.MUL);
+    if (isGenerator) {
+      sourceAdd((char) ts.MUL);
+    }
 
     String name;
     Object memberExprNode = null;
@@ -240,11 +261,33 @@ public class Parser {
           if (!first)
             sourceAdd((char) ts.COMMA);
           first = false;
+
+          // Check for rest parameter: ...name
+          if (ts.matchToken(ts.SPREAD)) {
+            sourceAdd((char) ts.SPREAD);
+            mustMatchToken(ts, ts.NAME, "msg.no.parm");
+            String restName = ts.getString();
+            sourceAddString(ts.NAME, restName);
+            nf.addChildToBack(args, nf.createRest(nf.createName(restName)));
+            break; // rest must be last
+          }
+
           mustMatchToken(ts, ts.NAME, "msg.no.parm");
           String s = ts.getString();
-          nf.addChildToBack(args, nf.createName(s));
-
+          Object paramNode = nf.createName(s);
           sourceAddString(ts.NAME, s);
+
+          // Check for default value: name = expr
+          if (ts.matchToken(ts.ASSIGN)) {
+            if (ts.getOp() != ts.NOP) {
+              reportError(ts, "msg.bad.var.init");
+            }
+            sourceAdd((char) ts.ASSIGN);
+            sourceAdd((char) ts.NOP);
+            nf.addChildToBack(paramNode, assignExpr(ts, false));
+          }
+
+          nf.addChildToBack(args, paramNode);
         } while (ts.matchToken(ts.COMMA));
 
         mustMatchToken(ts, ts.GWT, "msg.no.paren.after.parms");
@@ -266,8 +309,15 @@ public class Parser {
       functionNumber = savedFunctionNumber;
     }
 
-    Object pn = nf.createFunction(name, args, body, ts.getSourceName(),
-      baseLineno, ts.getLineno(), source, isExpr || memberExprNode != null);
+    Object pn;
+    if (isGenerator) {
+      pn = nf.createFunctionEx(name, args, body, ts.getSourceName(),
+        baseLineno, ts.getLineno(), source, isExpr || memberExprNode != null,
+        true, false);
+    } else {
+      pn = nf.createFunction(name, args, body, ts.getSourceName(),
+        baseLineno, ts.getLineno(), source, isExpr || memberExprNode != null);
+    }
     if (memberExprNode != null) {
       pn = nf.createBinary(ts.ASSIGN, ts.NOP, memberExprNode, pn);
     }
@@ -520,6 +570,7 @@ public class Parser {
         mustMatchToken(ts, ts.LP, "msg.no.paren.for");
         sourceAdd((char) ts.LP);
         tt = ts.peekToken();
+        boolean isForOf = false;
         if (tt == ts.SEMI) {
           init = nf.createLeaf(ts.VOID);
         } else {
@@ -527,6 +578,12 @@ public class Parser {
             // set init to a var list or initial
             ts.getToken(); // throw away the 'var' token
             init = variables(ts, true);
+          } else if (tt == ts.LET) {
+            ts.getToken();
+            init = letOrConstVariables(ts, true, TokenStream.LET);
+          } else if (tt == ts.CONST) {
+            ts.getToken();
+            init = letOrConstVariables(ts, true, TokenStream.CONST);
           } else {
             init = expr(ts, true);
           }
@@ -538,6 +595,12 @@ public class Parser {
           sourceAdd((char) ts.IN);
           // 'cond' is the object over which we're iterating
           cond = expr(ts, false);
+        } else if (tt == ts.OF) {
+          // for...of loop
+          ts.matchToken(ts.OF);
+          sourceAdd((char) ts.OF);
+          cond = expr(ts, false);
+          isForOf = true;
         } else { // ordinary for loop
           mustMatchToken(ts, ts.SEMI, "msg.no.semi.for");
           sourceAdd((char) ts.SEMI);
@@ -565,7 +628,9 @@ public class Parser {
         sourceAdd((char) ts.RC);
         sourceAdd((char) ts.EOL);
 
-        if (incr == null) {
+        if (isForOf) {
+          pn = nf.createForOf(init, cond, body, lineno);
+        } else if (incr == null) {
           // cond could be null if 'in obj' got eaten by the init node.
           pn = nf.createForIn(init, cond, body, lineno);
         } else {
@@ -720,6 +785,44 @@ public class Parser {
         pn = variables(ts, false);
         if (ts.getLineno() == lineno)
           wellTerminated(ts, ts.ERROR);
+        break;
+      }
+      case TokenStream.LET: {
+        int lineno = ts.getLineno();
+        pn = letOrConstVariables(ts, false, TokenStream.LET);
+        if (ts.getLineno() == lineno)
+          wellTerminated(ts, ts.ERROR);
+        break;
+      }
+      case TokenStream.CONST: {
+        int lineno = ts.getLineno();
+        pn = letOrConstVariables(ts, false, TokenStream.CONST);
+        if (ts.getLineno() == lineno)
+          wellTerminated(ts, ts.ERROR);
+        break;
+      }
+      case TokenStream.CLASS: {
+        pn = classDeclaration(ts, false);
+        skipsemi = true;
+        break;
+      }
+      case TokenStream.ASYNC: {
+        // async function declaration
+        int nextTok = ts.peekToken();
+        if (nextTok == ts.FUNCTION) {
+          ts.getToken(); // consume 'function'
+          pn = asyncFunction(ts, false);
+          skipsemi = true;
+          break;
+        }
+        // Otherwise fall through to default expression handling
+        ts.ungetToken(tt);
+        int lineno2 = ts.getLineno();
+        pn = expr(ts, false);
+        pn = nf.createExprStatement(pn, lineno2);
+        if (ts.getLineno() == lineno2) {
+          wellTerminated(ts, tt);
+        }
         break;
       }
       case TokenStream.RETURN: {
@@ -887,7 +990,15 @@ public class Parser {
 
   private Object assignExpr(TokenStream ts, boolean inForInit)
       throws IOException, JavaScriptException {
+    // Check for arrow function: (params) => body  or  ident => body
+    // This is a simplified check. We try to parse as conditional first,
+    // and if we see '=>' afterward, reinterpret as arrow function.
     Object pn = condExpr(ts, inForInit);
+
+    if (ts.matchToken(ts.ARROW)) {
+      // Reinterpret pn as arrow function parameters, then parse body
+      return arrowFunctionFromExpr(ts, pn);
+    }
 
     if (ts.matchToken(ts.ASSIGN)) {
       // omitted: "invalid assignment left-hand side" check.
@@ -925,6 +1036,9 @@ public class Parser {
     if (ts.matchToken(ts.OR)) {
       sourceAdd((char) ts.OR);
       pn = nf.createBinary(ts.OR, pn, orExpr(ts, inForInit));
+    } else if (ts.matchToken(ts.NULLCOALESCE)) {
+      sourceAdd((char) ts.NULLCOALESCE);
+      pn = nf.createNullishCoalesce(pn, andExpr(ts, inForInit));
     }
 
     return pn;
@@ -1028,12 +1142,25 @@ public class Parser {
       JavaScriptException {
     int tt;
 
-    Object pn = unaryExpr(ts);
+    Object pn = exponentiationExpr(ts);
 
     while ((tt = ts.peekToken()) == ts.MUL || tt == ts.DIV || tt == ts.MOD) {
       tt = ts.getToken();
       sourceAdd((char) tt);
-      pn = nf.createBinary(tt, pn, unaryExpr(ts));
+      pn = nf.createBinary(tt, pn, exponentiationExpr(ts));
+    }
+
+    return pn;
+  }
+
+  private Object exponentiationExpr(TokenStream ts) throws IOException,
+      JavaScriptException {
+    Object pn = unaryExpr(ts);
+
+    if (ts.matchToken(ts.EXPONENT)) {
+      sourceAdd((char) ts.EXPONENT);
+      // Right-associative
+      pn = nf.createExponentiation(pn, exponentiationExpr(ts));
     }
 
     return pn;
@@ -1067,6 +1194,31 @@ public class Parser {
       case TokenStream.DELPROP:
         sourceAdd((char) ts.DELPROP);
         return nf.createUnary(ts.DELPROP, unaryExpr(ts));
+
+      case TokenStream.AWAIT:
+        sourceAdd((char) ts.AWAIT);
+        return nf.createAwait(unaryExpr(ts));
+
+      case TokenStream.YIELD: {
+        sourceAdd((char) ts.YIELD);
+        boolean isDelegating = ts.matchToken(ts.MUL);
+        if (isDelegating) {
+          sourceAdd((char) ts.MUL);
+        }
+        // Check if yield has an argument (not followed by ; or } or , etc.)
+        int nextTok = ts.peekTokenSameLine();
+        if (nextTok != ts.EOF && nextTok != ts.EOL && nextTok != ts.SEMI
+            && nextTok != ts.RC && nextTok != ts.RB && nextTok != ts.GWT
+            && nextTok != ts.COMMA && nextTok != ts.COLON) {
+          return nf.createYield(assignExpr(ts, false), isDelegating,
+              ts.getLineno());
+        }
+        return nf.createYield(null, isDelegating, ts.getLineno());
+      }
+
+      case TokenStream.SPREAD:
+        sourceAdd((char) ts.SPREAD);
+        return nf.createSpread(assignExpr(ts, false));
 
       case TokenStream.ERROR:
         break;
@@ -1110,7 +1262,13 @@ public class Parser {
         if (!first)
           sourceAdd((char) ts.COMMA);
         first = false;
-        nf.addChildToBack(listNode, assignExpr(ts, false));
+        if (ts.peekToken() == ts.SPREAD) {
+          ts.getToken();
+          sourceAdd((char) ts.SPREAD);
+          nf.addChildToBack(listNode, nf.createSpread(assignExpr(ts, false)));
+        } else {
+          nf.addChildToBack(listNode, assignExpr(ts, false));
+        }
       } while (ts.matchToken(ts.COMMA));
 
       mustMatchToken(ts, ts.GWT, "msg.no.paren.arg");
@@ -1183,6 +1341,34 @@ public class Parser {
          * operator syntax he mentioned?
          */
         lastExprEndLine = ts.getLineno();
+      } else if (tt == ts.OPTCHAIN) {
+        // Optional chaining: obj?.prop  or  obj?.[expr]  or  obj?.()
+        sourceAdd((char) ts.OPTCHAIN);
+        int next = ts.peekToken();
+        if (next == ts.LB) {
+          // obj?.[expr]
+          ts.getToken();
+          sourceAdd((char) ts.LB);
+          Object indexExpr = expr(ts, false);
+          mustMatchToken(ts, ts.RB, "msg.no.bracket.index");
+          sourceAdd((char) ts.RB);
+          pn = nf.createOptionalChain(pn, indexExpr);
+        } else if (allowCallSyntax && next == ts.LP) {
+          // obj?.()
+          ts.getToken();
+          pn = nf.createUnary(ts.CALL, pn);
+          sourceAdd((char) ts.LP);
+          pn = argumentList(ts, pn);
+          // Mark the call as optional
+          ((Node) pn).putIntProp(Node.LOCAL_PROP, 1);
+        } else {
+          // obj?.prop
+          mustMatchToken(ts, ts.NAME, "msg.no.name.after.dot");
+          String s = ts.getString();
+          sourceAddString(ts.NAME, s);
+          pn = nf.createOptionalChain(pn, nf.createName(s));
+        }
+        lastExprEndLine = ts.getLineno();
       } else if (tt == ts.LB) {
         sourceAdd((char) ts.LB);
         pn = nf.createBinary(ts.LB, pn, expr(ts, false));
@@ -1249,6 +1435,10 @@ public class Parser {
 
             if (tt == ts.COMMA) {
               nf.addChildToBack(pn, nf.createLeaf(ts.PRIMARY, ts.UNDEFINED));
+            } else if (tt == ts.SPREAD) {
+              ts.getToken(); // consume SPREAD
+              sourceAdd((char) ts.SPREAD);
+              nf.addChildToBack(pn, nf.createSpread(assignExpr(ts, false)));
             } else {
               nf.addChildToBack(pn, assignExpr(ts, false));
             }
@@ -1277,11 +1467,110 @@ public class Parser {
 
             tt = ts.getToken();
             switch (tt) {
-              case TokenStream.NAME:
-                String name = ts.getString();
-                sourceAddString(ts.NAME, name);
+              case TokenStream.LB: {
+                // Computed property: [expr]: value
+                sourceAdd((char) ts.LB);
+                Object keyExpr = assignExpr(ts, false);
+                mustMatchToken(ts, ts.RB, "msg.no.bracket.index");
+                sourceAdd((char) ts.RB);
+                property = nf.createComputedProp(keyExpr);
+                break;
+              }
+              case TokenStream.NAME: {
+                String nameStr = ts.getString();
+                // Check for get/set shorthand or method shorthand
+                int peek = ts.peekToken();
+                if ("get".equals(nameStr) && peek != ts.COLON && peek != ts.COMMA
+                    && peek != ts.RC && peek != ts.LP) {
+                  // getter: get propName() { ... }
+                  sourceAddString(ts.NAME, nameStr);
+                  property = parsePropertyName(ts);
+                  // Parse function body
+                  mustMatchToken(ts, ts.LP, "msg.no.paren.parms");
+                  mustMatchToken(ts, ts.GWT, "msg.no.paren.after.parms");
+                  mustMatchToken(ts, ts.LC, "msg.no.brace.body");
+                  Object getterBody = parseFunctionBody(ts);
+                  mustMatchToken(ts, ts.RC, "msg.no.brace.after.body");
+                  Object getterArgs = nf.createLeaf(ts.LP);
+                  Object getterFn = nf.createFunction(null, getterArgs, getterBody,
+                      ts.getSourceName(), ts.getLineno(), ts.getLineno(), null, true);
+                  nf.addChildToBack(pn, property);
+                  nf.addChildToBack(pn, getterFn);
+                  // Skip the COLON handling below
+                  if (!ts.matchToken(ts.COMMA)) {
+                    mustMatchToken(ts, ts.RC, "msg.no.brace.prop");
+                    ts.ungetToken(ts.RC);
+                  }
+                  continue commaloop;
+                } else if ("set".equals(nameStr) && peek != ts.COLON && peek != ts.COMMA
+                    && peek != ts.RC && peek != ts.LP) {
+                  // setter: set propName(val) { ... }
+                  sourceAddString(ts.NAME, nameStr);
+                  property = parsePropertyName(ts);
+                  mustMatchToken(ts, ts.LP, "msg.no.paren.parms");
+                  Object setterArgs = nf.createLeaf(ts.LP);
+                  if (!ts.matchToken(ts.GWT)) {
+                    do {
+                      mustMatchToken(ts, ts.NAME, "msg.no.parm");
+                      nf.addChildToBack(setterArgs, nf.createName(ts.getString()));
+                    } while (ts.matchToken(ts.COMMA));
+                    mustMatchToken(ts, ts.GWT, "msg.no.paren.after.parms");
+                  }
+                  mustMatchToken(ts, ts.LC, "msg.no.brace.body");
+                  Object setterBody = parseFunctionBody(ts);
+                  mustMatchToken(ts, ts.RC, "msg.no.brace.after.body");
+                  Object setterFn = nf.createFunction(null, setterArgs, setterBody,
+                      ts.getSourceName(), ts.getLineno(), ts.getLineno(), null, true);
+                  nf.addChildToBack(pn, property);
+                  nf.addChildToBack(pn, setterFn);
+                  if (!ts.matchToken(ts.COMMA)) {
+                    mustMatchToken(ts, ts.RC, "msg.no.brace.prop");
+                    ts.ungetToken(ts.RC);
+                  }
+                  continue commaloop;
+                } else if (peek == ts.LP) {
+                  // Method shorthand: name() { ... }
+                  sourceAddString(ts.NAME, nameStr);
+                  property = nf.createName(nameStr);
+                  Object method = parseMethodDefinition(ts, nameStr);
+                  nf.addChildToBack(pn, property);
+                  nf.addChildToBack(pn, method);
+                  if (!ts.matchToken(ts.COMMA)) {
+                    mustMatchToken(ts, ts.RC, "msg.no.brace.prop");
+                    ts.ungetToken(ts.RC);
+                  }
+                  continue commaloop;
+                } else if (peek == ts.COMMA || peek == ts.RC) {
+                  // Shorthand property: { name } means { name: name }
+                  sourceAddString(ts.NAME, nameStr);
+                  property = nf.createName(nameStr);
+                  sourceAdd((char) ts.OBJLIT);
+                  nf.addChildToBack(pn, property);
+                  nf.addChildToBack(pn, nf.createName(nameStr));
+                  continue commaloop;
+                }
+                sourceAddString(ts.NAME, nameStr);
                 property = nf.createName(ts.getString());
                 break;
+              }
+              case TokenStream.MUL: {
+                // Generator method shorthand: *name() { ... }
+                sourceAdd((char) ts.MUL);
+                Object genProp = parsePropertyName(ts);
+                String genName = null;
+                if (((Node)genProp).getType() == TokenStream.NAME) {
+                  genName = ((Node)genProp).getString();
+                }
+                Object genMethod = parseMethodDefinition(ts, genName);
+                ((Node) genMethod).putIntProp(Node.LOCAL_PROP, 1); // generator flag
+                nf.addChildToBack(pn, genProp);
+                nf.addChildToBack(pn, genMethod);
+                if (!ts.matchToken(ts.COMMA)) {
+                  mustMatchToken(ts, ts.RC, "msg.no.brace.prop");
+                  ts.ungetToken(ts.RC);
+                }
+                continue commaloop;
+              }
               case TokenStream.STRING:
                 String s = ts.getString();
                 sourceAddString(ts.NAME, s);
@@ -1292,6 +1581,15 @@ public class Parser {
                 sourceAddNumber(n);
                 property = nf.createNumber(n);
                 break;
+              case TokenStream.SPREAD: {
+                // Spread in object literal: { ...obj }
+                sourceAdd((char) ts.SPREAD);
+                Object spreadExpr = assignExpr(ts, false);
+                nf.addChildToBack(pn, nf.createSpread(spreadExpr));
+                // Spread doesn't need a value, add a placeholder
+                nf.addChildToBack(pn, nf.createLeaf(ts.VOID));
+                continue commaloop;
+              }
               case TokenStream.RC:
                 // trailing comma is OK.
                 ts.ungetToken(tt);
@@ -1358,6 +1656,58 @@ public class Parser {
         sourceAdd((char) ts.getOp());
         return nf.createLeaf(ts.PRIMARY, ts.getOp());
 
+      case TokenStream.TEMPLATE:
+        return nf.createTemplateLiteral(
+            new String[] { ts.getString() }, new Object[0], ts.getLineno());
+
+      case TokenStream.TEMPLATE_HEAD: {
+        // Template with interpolations: `str0${expr0}str1${expr1}...strN`
+        java.util.List<String> strings = new java.util.ArrayList<String>();
+        java.util.List<Object> exprs = new java.util.ArrayList<Object>();
+        strings.add(ts.getString());
+        while (true) {
+          // Parse interpolation expression
+          Object expr = assignExpr(ts, false);
+          exprs.add(expr);
+          // Expect closing '}' — matchToken consumes it
+          mustMatchToken(ts, TokenStream.RC, "msg.no.brace.prop");
+          // Scan the next template part
+          int partTok = ts.scanTemplatePart();
+          strings.add(ts.getString());
+          if (partTok == TokenStream.TEMPLATE_TAIL) {
+            break;
+          }
+          if (partTok != TokenStream.TEMPLATE_MIDDLE) {
+            reportError(ts, "msg.unterminated.string.lit");
+            break;
+          }
+        }
+        return nf.createTemplateLiteral(
+            strings.toArray(new String[0]),
+            exprs.toArray(new Object[0]),
+            ts.getLineno());
+      }
+
+      case TokenStream.SUPER:
+        sourceAdd((char) ts.SUPER);
+        return nf.createSuper(ts.getLineno());
+
+      case TokenStream.CLASS:
+        return classDeclaration(ts, true);
+
+      case TokenStream.ASYNC: {
+        // async function or async arrow
+        int nextTok = ts.peekToken();
+        if (nextTok == ts.FUNCTION) {
+          ts.getToken(); // consume 'function'
+          return asyncFunction(ts, true);
+        }
+        // Otherwise treat 'async' as a name (contextual keyword)
+        String asyncName = "async";
+        sourceAddString(ts.NAME, asyncName);
+        return nf.createName(asyncName);
+      }
+
       case TokenStream.RESERVED:
         reportError(ts, "msg.reserved.id");
         break;
@@ -1372,6 +1722,392 @@ public class Parser {
 
     }
     return null; // should never reach here
+  }
+
+  // ===== ES6+ Parsing Methods =====
+
+  /**
+   * Parse let/const variable declarations.
+   * Works like variables() but uses LET or CONST token for the node type.
+   */
+  private Object letOrConstVariables(TokenStream ts, boolean inForInit,
+      int tokenType) throws IOException, JavaScriptException {
+    Object pn;
+    if (tokenType == TokenStream.LET) {
+      pn = nf.createLetVariables(ts.getLineno());
+      sourceAdd((char) ts.LET);
+    } else {
+      pn = nf.createConstVariables(ts.getLineno());
+      sourceAdd((char) ts.CONST);
+    }
+    boolean first = true;
+
+    for (;;) {
+      Object name;
+      Object init;
+      mustMatchToken(ts, ts.NAME, "msg.bad.var");
+      String s = ts.getString();
+
+      if (!first)
+        sourceAdd((char) ts.COMMA);
+      first = false;
+
+      sourceAddString(ts.NAME, s);
+      name = nf.createName(s);
+
+      if (ts.matchToken(ts.ASSIGN)) {
+        if (ts.getOp() != ts.NOP)
+          reportError(ts, "msg.bad.var.init");
+
+        sourceAdd((char) ts.ASSIGN);
+        sourceAdd((char) ts.NOP);
+
+        init = assignExpr(ts, inForInit);
+        nf.addChildToBack(name, init);
+      }
+      nf.addChildToBack(pn, name);
+      if (!ts.matchToken(ts.COMMA))
+        break;
+    }
+    return pn;
+  }
+
+  /**
+   * Parse a class declaration or expression.
+   * class [Name] [extends Expr] { body }
+   */
+  private Object classDeclaration(TokenStream ts, boolean isExpr)
+      throws IOException, JavaScriptException {
+    int baseLineno = ts.getLineno();
+    sourceAdd((char) ts.CLASS);
+
+    String name = null;
+    if (ts.matchToken(ts.NAME)) {
+      name = ts.getString();
+      sourceAddString(ts.NAME, name);
+    } else if (!isExpr) {
+      reportError(ts, "msg.syntax");
+    }
+
+    Object superExpr = null;
+    if (ts.matchToken(ts.EXTENDS)) {
+      sourceAdd((char) ts.EXTENDS);
+      superExpr = assignExpr(ts, false);
+    }
+
+    mustMatchToken(ts, ts.LC, "msg.no.brace.body");
+    sourceAdd((char) ts.LC);
+
+    Object body = nf.createBlock(ts.getLineno());
+
+    // Parse class body
+    while (!ts.matchToken(ts.RC)) {
+      if (ts.matchToken(ts.SEMI)) {
+        continue; // skip empty statements in class body
+      }
+
+      boolean isStatic = false;
+      boolean isGetter = false;
+      boolean isSetter = false;
+      boolean isComputed = false;
+      boolean isGenerator = false;
+      boolean isAsync = false;
+
+      // Check for 'static' prefix
+      if (ts.matchToken(ts.STATIC)) {
+        isStatic = true;
+        sourceAdd((char) ts.STATIC);
+      }
+
+      // Check for 'async' prefix
+      int peek = ts.peekToken();
+      if (peek == ts.ASYNC) {
+        ts.getToken();
+        isAsync = true;
+        sourceAdd((char) ts.ASYNC);
+        peek = ts.peekToken();
+      }
+
+      // Check for generator '*'
+      if (ts.matchToken(ts.MUL)) {
+        isGenerator = true;
+        sourceAdd((char) ts.MUL);
+      }
+
+      // Check for get/set
+      peek = ts.peekToken();
+      if (ts.matchToken(ts.NAME)) {
+        String memberName = ts.getString();
+        if ("get".equals(memberName) && peek != ts.LP) {
+          isGetter = true;
+          sourceAddString(ts.NAME, memberName);
+        } else if ("set".equals(memberName) && peek != ts.LP) {
+          isSetter = true;
+          sourceAddString(ts.NAME, memberName);
+        } else {
+          // This is the actual property name, unget it and proceed
+          ts.ungetToken(ts.NAME);
+        }
+      }
+
+      // Parse property key
+      Object key;
+      if (ts.matchToken(ts.LB)) {
+        // Computed property: [expr]
+        isComputed = true;
+        sourceAdd((char) ts.LB);
+        key = nf.createComputedProp(assignExpr(ts, false));
+        mustMatchToken(ts, ts.RB, "msg.no.bracket.index");
+        sourceAdd((char) ts.RB);
+      } else {
+        key = parsePropertyName(ts);
+      }
+
+      // Parse method definition
+      Object value = parseMethodDefinition(ts, null);
+
+      Object member = nf.createClassMember(key, value,
+          isStatic, isGetter, isSetter, isComputed,
+          isGenerator, isAsync, ts.getLineno());
+      nf.addChildToBack(body, member);
+    }
+    sourceAdd((char) ts.RC);
+
+    return nf.createClass(name, superExpr, body,
+        ts.getSourceName(), baseLineno, ts.getLineno());
+  }
+
+  /**
+   * Parse a property name (NAME, STRING, NUMBER).
+   */
+  private Object parsePropertyName(TokenStream ts)
+      throws IOException, JavaScriptException {
+    int tt = ts.getToken();
+    switch (tt) {
+      case TokenStream.NAME: {
+        String s = ts.getString();
+        sourceAddString(ts.NAME, s);
+        return nf.createName(s);
+      }
+      case TokenStream.STRING: {
+        String s = ts.getString();
+        sourceAddString(ts.STRING, s);
+        return nf.createString(s);
+      }
+      case TokenStream.NUMBER: {
+        double n = ts.getNumber();
+        sourceAddNumber(n);
+        return nf.createNumber(n);
+      }
+      default:
+        reportError(ts, "msg.bad.prop");
+        return nf.createName("error");
+    }
+  }
+
+  /**
+   * Parse a method definition body:  (params) { body }
+   */
+  private Object parseMethodDefinition(TokenStream ts, String name)
+      throws IOException, JavaScriptException {
+    mustMatchToken(ts, ts.LP, "msg.no.paren.parms");
+    sourceAdd((char) ts.LP);
+
+    Object args = nf.createLeaf(ts.LP);
+    if (!ts.matchToken(ts.GWT)) {
+      boolean firstParam = true;
+      do {
+        if (!firstParam)
+          sourceAdd((char) ts.COMMA);
+        firstParam = false;
+
+        if (ts.matchToken(ts.SPREAD)) {
+          // Rest parameter
+          sourceAdd((char) ts.SPREAD);
+          mustMatchToken(ts, ts.NAME, "msg.no.parm");
+          String restName = ts.getString();
+          sourceAddString(ts.NAME, restName);
+          nf.addChildToBack(args, nf.createRest(nf.createName(restName)));
+          break; // rest must be last
+        }
+
+        mustMatchToken(ts, ts.NAME, "msg.no.parm");
+        String paramName = ts.getString();
+        sourceAddString(ts.NAME, paramName);
+        Object param = nf.createName(paramName);
+
+        // Check for default value
+        if (ts.matchToken(ts.ASSIGN)) {
+          sourceAdd((char) ts.ASSIGN);
+          sourceAdd((char) ts.NOP);
+          nf.addChildToBack(param, assignExpr(ts, false));
+        }
+        nf.addChildToBack(args, param);
+      } while (ts.matchToken(ts.COMMA));
+
+      mustMatchToken(ts, ts.GWT, "msg.no.paren.after.parms");
+    }
+    sourceAdd((char) ts.GWT);
+
+    mustMatchToken(ts, ts.LC, "msg.no.brace.body");
+    sourceAdd((char) ts.LC);
+    Object body = parseFunctionBody(ts);
+    mustMatchToken(ts, ts.RC, "msg.no.brace.after.body");
+    sourceAdd((char) ts.RC);
+
+    return nf.createFunction(name, args, body, ts.getSourceName(),
+        ts.getLineno(), ts.getLineno(), null, true);
+  }
+
+  /**
+   * Reinterpret an expression as arrow function parameters and build an
+   * arrow function node.
+   */
+  private Object arrowFunctionFromExpr(TokenStream ts, Object paramsExpr)
+      throws IOException, JavaScriptException {
+    int baseLineno = ts.getLineno();
+    sourceAdd((char) ts.ARROW);
+
+    // Build args from the expression:
+    // - Single NAME: single param
+    // - Parenthesized expression/comma expr: multiple params
+    // For simplicity at the Rhino level, we store the pre-parsed params
+    // as children of a LP node (same as function args).
+    Object args = nf.createLeaf(ts.LP);
+    reinterpretAsParams(args, (Node) paramsExpr);
+
+    // Parse the body
+    Object body;
+    if (ts.matchToken(ts.LC)) {
+      // Block body
+      sourceAdd((char) ts.LC);
+      body = parseFunctionBody(ts);
+      mustMatchToken(ts, ts.RC, "msg.no.brace.after.body");
+      sourceAdd((char) ts.RC);
+    } else {
+      // Concise body (single expression)
+      Object exprBody = assignExpr(ts, false);
+      body = nf.createBlock(ts.getLineno());
+      nf.addChildToBack(body, nf.createReturn(exprBody, ts.getLineno()));
+    }
+
+    return nf.createArrowFunction(args, body, ts.getSourceName(),
+        baseLineno, ts.getLineno(), false);
+  }
+
+  /**
+   * Reinterpret a parsed expression as function parameters for arrow functions.
+   */
+  private void reinterpretAsParams(Object args, Node expr) {
+    switch (expr.getType()) {
+      case TokenStream.NAME:
+        nf.addChildToBack(args, nf.createName(expr.getString()));
+        break;
+      case TokenStream.COMMA: {
+        Node child = expr.getFirstChild();
+        while (child != null) {
+          Node next = child.getNext();
+          reinterpretAsParams(args, child);
+          child = next;
+        }
+        break;
+      }
+      case TokenStream.ASSIGN: {
+        // Default parameter: name = defaultValue
+        Node paramName = expr.getFirstChild();
+        Node defaultValue = paramName.getNext();
+        Object name = nf.createName(paramName.getString());
+        nf.addChildToBack(name, defaultValue);
+        nf.addChildToBack(args, name);
+        break;
+      }
+      case TokenStream.SPREAD: {
+        // Rest parameter: ...name
+        Node restChild = expr.getFirstChild();
+        nf.addChildToBack(args, nf.createRest(nf.createName(restChild.getString())));
+        break;
+      }
+      default:
+        // For other expression types (destructuring etc.), pass through
+        nf.addChildToBack(args, expr);
+        break;
+    }
+  }
+
+  /**
+   * Parse an async function declaration or expression.
+   * Assumes 'async' and 'function' tokens have already been consumed.
+   */
+  private Object asyncFunction(TokenStream ts, boolean isExpr)
+      throws IOException, JavaScriptException {
+    int baseLineno = ts.getLineno();
+    sourceAdd((char) ts.ASYNC);
+    sourceAdd((char) ts.FUNCTION);
+
+    boolean isGenerator = ts.matchToken(ts.MUL);
+    if (isGenerator) {
+      sourceAdd((char) ts.MUL);
+    }
+
+    String name = null;
+    if (ts.matchToken(ts.NAME)) {
+      name = ts.getString();
+      sourceAddString(ts.NAME, name);
+    }
+
+    mustMatchToken(ts, ts.LP, "msg.no.paren.parms");
+    sourceAdd((char) ts.LP);
+
+    // Save context
+    int savedSourceTop = sourceTop;
+    int savedFunctionNumber = functionNumber;
+    try {
+      functionNumber = 0;
+
+      Object args = nf.createLeaf(ts.LP);
+      if (!ts.matchToken(ts.GWT)) {
+        boolean first = true;
+        do {
+          if (!first)
+            sourceAdd((char) ts.COMMA);
+          first = false;
+
+          if (ts.matchToken(ts.SPREAD)) {
+            sourceAdd((char) ts.SPREAD);
+            mustMatchToken(ts, ts.NAME, "msg.no.parm");
+            String restName = ts.getString();
+            sourceAddString(ts.NAME, restName);
+            nf.addChildToBack(args, nf.createRest(nf.createName(restName)));
+            break;
+          }
+
+          mustMatchToken(ts, ts.NAME, "msg.no.parm");
+          String s = ts.getString();
+          sourceAddString(ts.NAME, s);
+          Object param = nf.createName(s);
+          if (ts.matchToken(ts.ASSIGN)) {
+            sourceAdd((char) ts.ASSIGN);
+            sourceAdd((char) ts.NOP);
+            nf.addChildToBack(param, assignExpr(ts, false));
+          }
+          nf.addChildToBack(args, param);
+        } while (ts.matchToken(ts.COMMA));
+        mustMatchToken(ts, ts.GWT, "msg.no.paren.after.parms");
+      }
+      sourceAdd((char) ts.GWT);
+
+      mustMatchToken(ts, ts.LC, "msg.no.brace.body");
+      sourceAdd((char) ts.LC);
+      Object body = parseFunctionBody(ts);
+      mustMatchToken(ts, ts.RC, "msg.no.brace.after.body");
+      sourceAdd((char) ts.RC);
+
+      return nf.createFunctionEx(name, args, body, ts.getSourceName(),
+          baseLineno, ts.getLineno(), null, isExpr, isGenerator, true);
+    } finally {
+      sourceTop = savedSourceTop;
+      functionNumber = savedFunctionNumber;
+    }
   }
 
   /**

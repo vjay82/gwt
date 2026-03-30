@@ -49,13 +49,19 @@ public enum JsBinaryOperator implements JsOperator {
 
   OR("||", 4, LEFT | INFIX),
 
+  NULLISH_COALESCE("??", 4, LEFT | INFIX),
+
   // Precedence 3 is for the condition operator.
+
+  // Exponentiation (right-associative, precedence 14)
+  EXP("**", 14, INFIX),
 
   // These assignment operators are right-associative.
   ASG("=", 2, INFIX), ASG_ADD("+=", 2, INFIX), ASG_SUB("-=", 2, INFIX), ASG_MUL("*=", 2, INFIX), ASG_DIV(
       "/=", 2, INFIX), ASG_MOD("%=", 2, INFIX), ASG_SHL("<<=", 2, INFIX), ASG_SHR(">>=", 2, INFIX), ASG_SHRU(
       ">>>=", 2, INFIX), ASG_BIT_AND("&=", 2, INFIX), ASG_BIT_OR("|=", 2, INFIX), ASG_BIT_XOR("^=",
-      2, INFIX),
+      2, INFIX), ASG_EXP("**=", 2, INFIX), ASG_AND("&&=", 2, INFIX), ASG_OR("||=", 2, INFIX),
+  ASG_NULLISH("??=", 2, INFIX),
 
   COMMA(",", 1, LEFT | INFIX);
 

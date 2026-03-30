@@ -15,6 +15,8 @@ package com.google.gwt.dev.js.ast;
 
 import com.google.gwt.dev.jjs.HasSourceInfo;
 import com.google.gwt.dev.jjs.InternalCompilerException;
+import com.google.gwt.dev.js.ast.JsClass.JsClassMember;
+import com.google.gwt.dev.js.ast.JsDestructuring.JsDestructuringElement;
 import com.google.gwt.dev.js.ast.JsVars.JsVar;
 
 import java.util.Iterator;
@@ -127,6 +129,12 @@ public class JsVisitor {
   public void endVisit(JsArrayLiteral x, JsContext ctx) {
   }
 
+  public void endVisit(JsArrowFunction x, JsContext ctx) {
+  }
+
+  public void endVisit(JsAwait x, JsContext ctx) {
+  }
+
   public void endVisit(JsBinaryOperation x, JsContext ctx) {
   }
 
@@ -145,6 +153,15 @@ public class JsVisitor {
   public void endVisit(JsCatch x, JsContext ctx) {
   }
 
+  public void endVisit(JsClass x, JsContext ctx) {
+  }
+
+  public void endVisit(JsClassMember x, JsContext ctx) {
+  }
+
+  public void endVisit(JsComputedPropertyKey x, JsContext ctx) {
+  }
+
   public void endVisit(JsConditional x, JsContext ctx) {
   }
 
@@ -155,6 +172,12 @@ public class JsVisitor {
   }
 
   public void endVisit(JsDefault x, JsContext ctx) {
+  }
+
+  public void endVisit(JsDestructuring x, JsContext ctx) {
+  }
+
+  public void endVisit(JsDestructuringElement x, JsContext ctx) {
   }
 
   public void endVisit(JsDoWhile x, JsContext ctx) {
@@ -170,6 +193,9 @@ public class JsVisitor {
   }
 
   public void endVisit(JsForIn x, JsContext ctx) {
+  }
+
+  public void endVisit(JsForOf x, JsContext ctx) {
   }
 
   public void endVisit(JsFunction x, JsContext ctx) {
@@ -229,13 +255,25 @@ public class JsVisitor {
   public void endVisit(JsRegExp x, JsContext ctx) {
   }
 
+  public void endVisit(JsRestParameter x, JsContext ctx) {
+  }
+
   public void endVisit(JsReturn x, JsContext ctx) {
+  }
+
+  public void endVisit(JsSpread x, JsContext ctx) {
   }
 
   public void endVisit(JsStringLiteral x, JsContext ctx) {
   }
 
+  public void endVisit(JsSuperRef x, JsContext ctx) {
+  }
+
   public void endVisit(JsSwitch x, JsContext ctx) {
+  }
+
+  public void endVisit(JsTemplateLiteral x, JsContext ctx) {
   }
 
   public void endVisit(JsThisRef x, JsContext ctx) {
@@ -256,11 +294,22 @@ public class JsVisitor {
   public void endVisit(JsWhile x, JsContext ctx) {
   }
 
+  public void endVisit(JsYield x, JsContext ctx) {
+  }
+
   public boolean visit(JsArrayAccess x, JsContext ctx) {
     return true;
   }
 
   public boolean visit(JsArrayLiteral x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsArrowFunction x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsAwait x, JsContext ctx) {
     return true;
   }
 
@@ -288,6 +337,18 @@ public class JsVisitor {
     return true;
   }
 
+  public boolean visit(JsClass x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsClassMember x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsComputedPropertyKey x, JsContext ctx) {
+    return true;
+  }
+
   public boolean visit(JsConditional x, JsContext ctx) {
     return true;
   }
@@ -301,6 +362,14 @@ public class JsVisitor {
   }
 
   public boolean visit(JsDefault x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsDestructuring x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsDestructuringElement x, JsContext ctx) {
     return true;
   }
 
@@ -321,6 +390,10 @@ public class JsVisitor {
   }
 
   public boolean visit(JsForIn x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsForOf x, JsContext ctx) {
     return true;
   }
 
@@ -400,7 +473,15 @@ public class JsVisitor {
     return true;
   }
 
+  public boolean visit(JsRestParameter x, JsContext ctx) {
+    return true;
+  }
+
   public boolean visit(JsReturn x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsSpread x, JsContext ctx) {
     return true;
   }
 
@@ -408,7 +489,15 @@ public class JsVisitor {
     return true;
   }
 
+  public boolean visit(JsSuperRef x, JsContext ctx) {
+    return true;
+  }
+
   public boolean visit(JsSwitch x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsTemplateLiteral x, JsContext ctx) {
     return true;
   }
 
@@ -433,6 +522,10 @@ public class JsVisitor {
   }
 
   public boolean visit(JsWhile x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsYield x, JsContext ctx) {
     return true;
   }
 

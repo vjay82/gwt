@@ -23,7 +23,7 @@ public enum JsUnaryOperator implements JsOperator {
 
   BIT_NOT("~", 14, PREFIX), DEC("--", 14, POSTFIX | PREFIX), DELETE("delete", 14, PREFIX), INC(
       "++", 14, POSTFIX | PREFIX), NEG("-", 14, PREFIX), POS("+", 14, PREFIX), NOT("!", 14, PREFIX), TYPEOF(
-      "typeof", 14, PREFIX), VOID("void", 14, PREFIX);
+      "typeof", 14, PREFIX), VOID("void", 14, PREFIX), SPREAD("...", 14, PREFIX);
 
   private final int mask;
 

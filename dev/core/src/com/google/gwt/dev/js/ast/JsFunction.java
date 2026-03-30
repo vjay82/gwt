@@ -30,6 +30,8 @@ public final class JsFunction extends JsLiteral implements HasName {
   protected final JsScope scope;
   private boolean isClinit;
   private boolean fromJava;
+  private boolean isAsync;
+  private boolean isGenerator;
   private JsFunction superClinit;
   private JsName name;
   private InliningMode inliningMode = InliningMode.NORMAL;
@@ -147,6 +149,22 @@ public final class JsFunction extends JsLiteral implements HasName {
 
   public void markAsClinit() {
     this.isClinit = true;
+  }
+
+  public boolean isAsync() {
+    return isAsync;
+  }
+
+  public void setAsync(boolean async) {
+    this.isAsync = async;
+  }
+
+  public boolean isGenerator() {
+    return isGenerator;
+  }
+
+  public void setGenerator(boolean generator) {
+    this.isGenerator = generator;
   }
 
   public void setBody(JsBlock body) {

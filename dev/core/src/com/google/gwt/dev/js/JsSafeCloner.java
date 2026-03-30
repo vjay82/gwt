@@ -18,6 +18,8 @@ package com.google.gwt.dev.js;
 import com.google.gwt.dev.jjs.InternalCompilerException;
 import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsArrowFunction;
+import com.google.gwt.dev.js.ast.JsAwait;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBooleanLiteral;
 import com.google.gwt.dev.js.ast.JsConditional;
@@ -36,9 +38,13 @@ import com.google.gwt.dev.js.ast.JsPostfixOperation;
 import com.google.gwt.dev.js.ast.JsPrefixOperation;
 import com.google.gwt.dev.js.ast.JsPropertyInitializer;
 import com.google.gwt.dev.js.ast.JsRegExp;
+import com.google.gwt.dev.js.ast.JsSpread;
 import com.google.gwt.dev.js.ast.JsStringLiteral;
+import com.google.gwt.dev.js.ast.JsSuperRef;
+import com.google.gwt.dev.js.ast.JsTemplateLiteral;
 import com.google.gwt.dev.js.ast.JsThisRef;
 import com.google.gwt.dev.js.ast.JsVisitor;
+import com.google.gwt.dev.js.ast.JsYield;
 import com.google.gwt.dev.util.collect.Stack;
 
 import java.util.ArrayList;
@@ -66,6 +72,20 @@ public final class JsSafeCloner {
       newExpression.setIndexExpr(stack.pop());
       newExpression.setArrayExpr(stack.pop());
       stack.push(newExpression);
+    }
+
+    @Override
+    public void endVisit(JsArrowFunction x, JsContext ctx) {
+      // Arrow functions cannot be safely hoisted.
+      successful = false;
+      stack.push(null);
+    }
+
+    @Override
+    public void endVisit(JsAwait x, JsContext ctx) {
+      // Await expressions have side effects and cannot be safely hoisted.
+      successful = false;
+      stack.push(null);
     }
 
     @Override
@@ -239,8 +259,34 @@ public final class JsSafeCloner {
     }
 
     @Override
+    public void endVisit(JsSuperRef x, JsContext ctx) {
+      stack.push(new JsSuperRef(x.getSourceInfo()));
+    }
+
+    @Override
+    public void endVisit(JsTemplateLiteral x, JsContext ctx) {
+      // Template literals with interpolations may have side effects.
+      successful = false;
+      stack.push(null);
+    }
+
+    @Override
     public void endVisit(JsThisRef x, JsContext ctx) {
       stack.push(new JsThisRef(x.getSourceInfo()));
+    }
+
+    @Override
+    public void endVisit(JsSpread x, JsContext ctx) {
+      // Spread expressions cannot be safely hoisted.
+      successful = false;
+      stack.push(null);
+    }
+
+    @Override
+    public void endVisit(JsYield x, JsContext ctx) {
+      // Yield expressions have side effects and cannot be safely hoisted.
+      successful = false;
+      stack.push(null);
     }
 
     public JsExpression getExpression() {

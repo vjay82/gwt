@@ -21,9 +21,18 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * A JavaScript <code>var</code> statement.
+ * A JavaScript variable declaration statement ({@code var}, {@code let}, or {@code const}).
  */
 public class JsVars extends JsStatement implements Iterable<JsVars.JsVar> {
+
+  /**
+   * The kind of variable declaration.
+   */
+  public enum VarKind {
+    VAR,
+    LET,
+    CONST
+  }
 
   /**
    * A var declared using the JavaScript <code>var</code> statement.
@@ -69,10 +78,25 @@ public class JsVars extends JsStatement implements Iterable<JsVars.JsVar> {
   }
 
   private final List<JsVar> vars = new ArrayList<JsVar>();
+  private VarKind varKind = VarKind.VAR;
 
   public JsVars(SourceInfo sourceInfo, JsVar... vars) {
     super(sourceInfo);
     Collections.addAll(this.vars, vars);
+  }
+
+  public JsVars(SourceInfo sourceInfo, VarKind varKind, JsVar... vars) {
+    super(sourceInfo);
+    this.varKind = varKind;
+    Collections.addAll(this.vars, vars);
+  }
+
+  public VarKind getVarKind() {
+    return varKind;
+  }
+
+  public void setVarKind(VarKind varKind) {
+    this.varKind = varKind;
   }
 
   public void add(JsVar var) {

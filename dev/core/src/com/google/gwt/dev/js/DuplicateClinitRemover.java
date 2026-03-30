@@ -29,6 +29,7 @@ import com.google.gwt.dev.js.ast.JsExprStmt;
 import com.google.gwt.dev.js.ast.JsExpression;
 import com.google.gwt.dev.js.ast.JsFor;
 import com.google.gwt.dev.js.ast.JsForIn;
+import com.google.gwt.dev.js.ast.JsForOf;
 import com.google.gwt.dev.js.ast.JsFunction;
 import com.google.gwt.dev.js.ast.JsIf;
 import com.google.gwt.dev.js.ast.JsInvocation;
@@ -204,6 +205,19 @@ public class DuplicateClinitRemover extends JsModVisitor {
     }
 
     x.setObjExpr(accept(x.getObjExpr()));
+
+    // The body is not guaranteed to be a JsBlock
+    x.setBody(branch(x.getBody()));
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsForOf x, JsContext ctx) {
+    if (x.getIterExpr() != null) {
+      x.setIterExpr(accept(x.getIterExpr()));
+    }
+
+    x.setIterableExpr(accept(x.getIterableExpr()));
 
     // The body is not guaranteed to be a JsBlock
     x.setBody(branch(x.getBody()));

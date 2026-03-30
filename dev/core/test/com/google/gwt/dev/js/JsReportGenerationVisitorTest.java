@@ -22,6 +22,7 @@ import com.google.gwt.dev.jjs.SourceOrigin;
 import com.google.gwt.dev.jjs.impl.JavaToJavaScriptMap;
 import com.google.gwt.dev.js.ast.JsProgram;
 import com.google.gwt.dev.js.ast.JsStatement;
+import com.google.gwt.dev.js.JsToStringGenerationVisitor;
 import com.google.gwt.dev.util.DefaultTextOutput;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
 
@@ -253,7 +254,8 @@ public class JsReportGenerationVisitorTest extends TestCase {
       throws IOException, JsParserException {
     DefaultTextOutput text = new DefaultTextOutput(compact);
     JsReportGenerationVisitor generator = new JsReportGenerationVisitor(text,
-        JavaToJavaScriptMap.EMPTY, false) {
+        JavaToJavaScriptMap.EMPTY, false,
+        new JsToStringGenerationVisitor.PrintOptions(false, false)) {
       @Override
       boolean surroundsInJavaSource(SourceInfo parent, SourceInfo child) {
         // The Rhino-based JavaScript parser doesn't provide character ranges

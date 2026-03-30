@@ -36,10 +36,10 @@ public class JsSourceGenerationVisitor extends JsToStringGenerationVisitor {
   /**
    * Generate the output source code using short or long identifiers.
    *
-   * @param useLongIdents if true, emit all identifiers in long form
+   * @param options print options controlling identifier length and literal minification
    */
-  public JsSourceGenerationVisitor(TextOutput out, boolean useLongIdents) {
-    super(out, useLongIdents);
+  public JsSourceGenerationVisitor(TextOutput out, JsToStringGenerationVisitor.PrintOptions options) {
+    super(out, options);
   }
 
   @Override
