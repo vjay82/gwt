@@ -161,14 +161,21 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   private final ArrayList<Integer> statementStarts = new ArrayList<>();
   private final boolean useLongIdents;
   private final boolean minifyLiterals;
+  private final boolean emitArrowFunctions;
 
   public static class PrintOptions {
     public final boolean useLongIdents;
     public final boolean minifyLiterals;
+    public final boolean emitArrowFunctions;
 
     public PrintOptions(boolean useLongIdents, boolean minifyLiterals) {
+      this(useLongIdents, minifyLiterals, false);
+    }
+
+    public PrintOptions(boolean useLongIdents, boolean minifyLiterals, boolean emitArrowFunctions) {
       this.useLongIdents = useLongIdents;
       this.minifyLiterals = minifyLiterals;
+      this.emitArrowFunctions = emitArrowFunctions;
     }
   }
 
@@ -188,6 +195,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     this.p = out;
     this.useLongIdents = options.useLongIdents;
     this.minifyLiterals = options.minifyLiterals;
+    this.emitArrowFunctions = options.emitArrowFunctions;
   }
 
   public List<NamedRange> getClassRanges() {
@@ -638,6 +646,9 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   @Override
   public boolean visit(JsExprStmt x, JsContext ctx) {
     boolean surroundWithParentheses = JsFirstExpressionVisitor.exec(x);
+    if (surroundWithParentheses && emitArrowFunctions) {
+      surroundWithParentheses = needsExprStmtParens(x.getExpression());
+    }
     if (surroundWithParentheses) {
       _lparen();
     }
@@ -647,6 +658,37 @@ public class JsToStringGenerationVisitor extends JsVisitor {
       _rparen();
     }
     return false;
+  }
+
+  private boolean needsExprStmtParens(JsExpression expr) {
+    while (true) {
+      if (expr instanceof JsObjectLiteral) {
+        return true;
+      }
+      if (expr instanceof JsFunction) {
+        return !canEmitAsArrow((JsFunction) expr);
+      }
+      if (expr instanceof JsBinaryOperation) {
+        expr = ((JsBinaryOperation) expr).getArg1();
+      } else if (expr instanceof JsInvocation) {
+        expr = ((JsInvocation) expr).getQualifier();
+      } else if (expr instanceof JsNameRef) {
+        JsExpression q = ((JsNameRef) expr).getQualifier();
+        if (q != null) {
+          expr = q;
+        } else {
+          return false;
+        }
+      } else if (expr instanceof JsArrayAccess) {
+        expr = ((JsArrayAccess) expr).getArrayExpr();
+      } else if (expr instanceof JsPostfixOperation) {
+        expr = ((JsPostfixOperation) expr).getArg();
+      } else if (expr instanceof JsConditional) {
+        expr = ((JsConditional) expr).getTestExpression();
+      } else {
+        return false;
+      }
+    }
   }
 
   @Override
@@ -760,8 +802,51 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   // stmts...
   // }
   //
+  private static boolean canEmitAsArrow(JsFunction fn) {
+    if (fn.getName() != null || fn.isGenerator()) {
+      return false;
+    }
+    return !usesThisOrArguments(fn.getBody());
+  }
+
+  private static boolean usesThisOrArguments(JsBlock body) {
+    if (body == null) {
+      return false;
+    }
+    class Detector extends JsVisitor {
+      boolean found = false;
+      @Override
+      public boolean visit(JsThisRef x, JsContext ctx) {
+        found = true;
+        return false;
+      }
+      @Override
+      public boolean visit(JsNameRef x, JsContext ctx) {
+        if (x.getQualifier() == null && "arguments".equals(x.getIdent())) {
+          found = true;
+          return false;
+        }
+        return true;
+      }
+      @Override
+      public boolean visit(JsFunction x, JsContext ctx) {
+        return false;
+      }
+      @Override
+      public boolean visit(JsArrowFunction x, JsContext ctx) {
+        return false;
+      }
+    }
+    Detector d = new Detector();
+    d.accept(body);
+    return d.found;
+  }
+
   @Override
   public boolean visit(JsFunction x, JsContext ctx) {
+    if (emitArrowFunctions && canEmitAsArrow(x)) {
+      return visitAsArrow(x);
+    }
     if (x.isAsync()) {
       p.print(ASYNC);
       _space();
@@ -789,6 +874,62 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     accept(x.getBody());
     needSemi = true;
     return false;
+  }
+
+  private boolean visitAsArrow(JsFunction x) {
+    if (x.isAsync()) {
+      p.print(ASYNC);
+      _space();
+    }
+    boolean singleParam = x.getParameters().size() == 1;
+    if (!singleParam) {
+      _lparen();
+    }
+    boolean sep = false;
+    for (JsParameter param : x.getParameters()) {
+      sep = _sepCommaOptSpace(sep);
+      accept(param);
+    }
+    if (!singleParam) {
+      _rparen();
+    }
+    _spaceOpt();
+    p.print(ARROW);
+
+    JsBlock body = x.getBody();
+    JsExpression conciseExpr = getConciseArrowBody(body);
+    if (conciseExpr != null) {
+      _spaceOpt();
+      boolean wrapParens = conciseExpr instanceof JsObjectLiteral
+          || (conciseExpr instanceof JsBinaryOperation
+              && ((JsBinaryOperation) conciseExpr).getOperator() == JsBinaryOperator.COMMA);
+      if (wrapParens) {
+        _lparen();
+      }
+      accept(conciseExpr);
+      if (wrapParens) {
+        _rparen();
+      }
+    } else {
+      accept(body);
+    }
+    needSemi = true;
+    return false;
+  }
+
+  private static JsExpression getConciseArrowBody(JsBlock body) {
+    if (body == null) {
+      return null;
+    }
+    List<JsStatement> stmts = body.getStatements();
+    if (stmts.size() != 1) {
+      return null;
+    }
+    JsStatement stmt = stmts.get(0);
+    if (stmt instanceof JsReturn) {
+      return ((JsReturn) stmt).getExpr();
+    }
+    return null;
   }
 
   @Override
@@ -1476,6 +1617,9 @@ public class JsToStringGenerationVisitor extends JsVisitor {
       boolean wrongAssoc) {
     int parentPrec = JsPrecedenceVisitor.exec(parent);
     int childPrec = JsPrecedenceVisitor.exec(child);
+    if (emitArrowFunctions && child instanceof JsFunction && canEmitAsArrow((JsFunction) child)) {
+      childPrec = 2; // arrow precedence
+    }
     return (parentPrec > childPrec || (parentPrec == childPrec && wrongAssoc));
   }
 

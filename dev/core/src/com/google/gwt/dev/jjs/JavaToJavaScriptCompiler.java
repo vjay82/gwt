@@ -775,7 +775,8 @@ public final class JavaToJavaScriptCompiler {
           JsReportGenerationVisitor v = new JsReportGenerationVisitor(out, jjsMap,
               options.isJsonSoycEnabled(),
               new JsToStringGenerationVisitor.PrintOptions(
-                  false, options.getOutput() == JsOutputOption.OBFUSCATED));
+                  false, options.getOutput() == JsOutputOption.OBFUSCATED,
+                  options.getOutput() == JsOutputOption.OBFUSCATED));
           v.accept(jsProgram.getFragmentBlock(i));
 
           StatementRanges statementRanges = v.getStatementRanges();
