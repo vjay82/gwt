@@ -42,6 +42,24 @@
     <call-subproject subproject="codeserver" subtarget="build"/>
     <call-subproject subproject="requestfactory" subtarget="build"/>
     <call-subproject subproject="servlet" subtarget="build"/>
+    <antcall target="strip-gwt-dev"/>
+  </target>
+
+  <target name="strip-gwt-dev"
+          description="Strips redundant/JDK-provided packages from gwt-dev.jar">
+    <property name="gwt.dev.jar" location="${gwt.build.lib}/gwt-dev.jar"/>
+    <property name="gwt.dev.jar.tmp" location="${gwt.build.lib}/gwt-dev-stripped.jar"/>
+    <jar destfile="${gwt.dev.jar.tmp}" duplicate="preserve" filesonly="false" index="true">
+      <zipfileset src="${gwt.dev.jar}">
+        <exclude name="com/google/gson/**"/>
+        <exclude name="org/apache/commons/**"/>
+        <exclude name="org/apache/http/**"/>
+        <exclude name="org/w3c/dom/**"/>
+        <exclude name="netscape/**"/>
+        <exclude name="javax/xml/**"/>
+      </zipfileset>
+    </jar>
+    <move file="${gwt.dev.jar.tmp}" tofile="${gwt.dev.jar}" overwrite="true"/>
   </target>
 
   <target name="dist" depends="build, doc" description="[action] Make all the distributions">
@@ -111,6 +129,7 @@
     <call-subproject subproject="servlet" subtarget="build"/>
     <call-subproject subproject="tools" subtarget="build"/>
     <call-subproject subproject="samples" subtarget="build"/>
+    <antcall target="strip-gwt-dev"/>
   </target>
 
   <target name="checkstyle" description="[action] Does static analysis of GWT source">
