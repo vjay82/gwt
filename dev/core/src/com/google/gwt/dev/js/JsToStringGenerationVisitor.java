@@ -1439,11 +1439,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
         boolean lastStatement = !iter.hasNext() && needBraces
             && !JsRequiresSemiVisitor.exec(stmt);
         if (functionStmt) {
-          if (lastStatement) {
-            _newlineOpt();
-          } else {
-            _newline();
-          }
+          _newlineOpt();
         } else {
           if (lastStatement) {
             _semiOpt();
