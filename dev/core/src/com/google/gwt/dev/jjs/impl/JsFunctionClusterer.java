@@ -17,8 +17,6 @@ package com.google.gwt.dev.jjs.impl;
 
 import com.google.gwt.core.ext.soyc.Range;
 import com.google.gwt.dev.jjs.JsSourceMap;
-import com.google.gwt.dev.util.editdistance.GeneralEditDistance;
-import com.google.gwt.dev.util.editdistance.GeneralEditDistances;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
 
 import java.util.ArrayList;
@@ -26,16 +24,17 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
  * Re-orders function declarations according to a given metric and clustering
- * algorithm in order to boost gzip/deflation compression efficiency. This
- * version uses the edit-distance algorithm as a metric, and a semi-greedy
- * strategy for grouping functions together.
+ * algorithm in order to boost gzip/deflation compression efficiency.
+ *
+ * <p>Uses SimHash on character trigrams as a fast similarity metric instead of
+ * expensive Levenshtein edit-distance, and ArrayList instead of LinkedList for
+ * better cache locality and O(1) indexed access.
  */
 public class JsFunctionClusterer extends JsAbstractTextTransformer {
 
@@ -49,13 +48,7 @@ public class JsFunctionClusterer extends JsAbstractTextTransformer {
       .compile("function |[a-zA-Z][.$_a-zA-Z0-9]*=function");
 
   /**
-   * Functions which have an edit-distance greater than this limit are
-   * considered equally different.
-   */
-  private static final int MAX_DISTANCE_LIMIT = 100;
-
-  /**
-   * Maximum number of functions to search for minimal edit-distance before
+   * Maximum number of functions to search for minimal distance before
    * giving up.
    */
   private static final int SEARCH_LIMIT = 10;
@@ -65,6 +58,46 @@ public class JsFunctionClusterer extends JsAbstractTextTransformer {
    */
   private static boolean isFunctionDeclaration(String code) {
     return functionDeclarationPattern.matcher(code).lookingAt();
+  }
+
+  /**
+   * Compute a SimHash fingerprint for a string based on character trigrams.
+   * Similar strings produce fingerprints with low Hamming distance.
+   */
+  private static long computeSimHash(String code) {
+    int[] bitCounts = new int[64];
+    int len = code.length();
+    for (int i = 0; i <= len - 3; i++) {
+      // Hash each trigram
+      long h = code.charAt(i) * 31L * 31L + code.charAt(i + 1) * 31L + code.charAt(i + 2);
+      // Mix the bits (based on a multiplicative hash)
+      h *= 0x9E3779B97F4A7C15L;
+      h ^= (h >>> 33);
+      h *= 0xFF51AFD7ED558CCDL;
+      h ^= (h >>> 33);
+      for (int bit = 0; bit < 64; bit++) {
+        if ((h & (1L << bit)) != 0) {
+          bitCounts[bit]++;
+        } else {
+          bitCounts[bit]--;
+        }
+      }
+    }
+    long hash = 0;
+    for (int bit = 0; bit < 64; bit++) {
+      if (bitCounts[bit] > 0) {
+        hash |= (1L << bit);
+      }
+    }
+    return hash;
+  }
+
+  /**
+   * Hamming distance between two SimHash fingerprints.
+   * Lower distance indicates more similar strings.
+   */
+  private static int simHashDistance(long hash1, long hash2) {
+    return Long.bitCount(hash1 ^ hash2);
   }
 
   /**
@@ -85,7 +118,7 @@ public class JsFunctionClusterer extends JsAbstractTextTransformer {
 
   @Override
   public void exec() {
-    LinkedList<Integer> functionIndices = new LinkedList<Integer>();
+    ArrayList<Integer> functionIndices = new ArrayList<Integer>();
 
     // gather up all of the indices of function decl statements
     for (int i = 0; i < statementRanges.numStatements(); i++) {
@@ -110,6 +143,12 @@ public class JsFunctionClusterer extends JsAbstractTextTransformer {
       }
     });
 
+    // Pre-compute SimHash fingerprints for all function bodies
+    Map<Integer, Long> simHashes = new HashMap<Integer, Long>();
+    for (int idx : functionIndices) {
+      simHashes.put(idx, computeSimHash(getJsForRange(idx)));
+    }
+
     // used to hold the new output order
     int[] clusteredIndices = new int[functionIndices.size()];
     int currentFunction = 0;
@@ -118,25 +157,21 @@ public class JsFunctionClusterer extends JsAbstractTextTransformer {
     clusteredIndices[currentFunction] = functionIndices.get(0);
     functionIndices.remove(0);
     while (!functionIndices.isEmpty()) {
-      // get the last outputted function to match against
-      String currentCode = getJsForRange(clusteredIndices[currentFunction]);
-      final GeneralEditDistance editDistance =
-          GeneralEditDistances.getLevenshteinDistance(currentCode);
+      // get the SimHash of the last outputted function
+      long currentHash = simHashes.get(clusteredIndices[currentFunction]);
 
       int bestIndex = 0;
-      int bestFunction = functionIndices.getFirst();
-      int bestDistance = MAX_DISTANCE_LIMIT;
+      int bestFunction = functionIndices.get(0);
+      int bestDistance = Integer.MAX_VALUE;
 
       int count = 0;
-      for (int functionIndex : functionIndices) {
-        if (count >= SEARCH_LIMIT) {
-          break;
-        }
-        String testCode = getJsForRange(functionIndex);
-        int dist = editDistance.getDistance(testCode, bestDistance);
+      int limit = Math.min(SEARCH_LIMIT, functionIndices.size());
+      for (int fi = 0; fi < limit; fi++) {
+        int functionIndex = functionIndices.get(fi);
+        int dist = simHashDistance(currentHash, simHashes.get(functionIndex));
         if (dist < bestDistance) {
           bestDistance = dist;
-          bestIndex = count;
+          bestIndex = fi;
           bestFunction = functionIndex;
         }
         count++;

@@ -768,59 +768,95 @@ public final class JavaToJavaScriptCompiler {
       int permutationId) {
 
     try (SimpleEvent ignored = new SimpleEvent("Generate JavaScript")) {
-      for (int i = 0; i < jsFragments.length; i++) {
-        try (JsFragmentEvent event = new JsFragmentEvent(permutationId, i)) {
-          DefaultTextOutput out = new DefaultTextOutput(!options.isIncrementalCompileEnabled() &&
-              options.getOutput().shouldMinimize());
-          JsReportGenerationVisitor v = new JsReportGenerationVisitor(out, jjsMap,
-              options.isJsonSoycEnabled(),
-              new JsToStringGenerationVisitor.PrintOptions(
-                  false, options.getOutput() == JsOutputOption.OBFUSCATED,
-                  options.getOutput() == JsOutputOption.OBFUSCATED));
-          v.accept(jsProgram.getFragmentBlock(i));
+      int fragmentCount = jsFragments.length;
 
-          StatementRanges statementRanges = v.getStatementRanges();
-          String code = out.toString();
-          JsSourceMap infoMap = (sourceInfoMaps != null) ? v.getSourceInfoMap() : null;
+      // Parallelize fragment code generation when there are multiple fragments
+      // and incremental compilation is not enabled (incremental uses shared mutable state).
+      if (fragmentCount > 1 && !options.isIncrementalCompileEnabled()) {
+        SizeBreakdown[] localSizeBreakdowns = sizeBreakdowns;
+        JsSourceMap[] sourceInfoMapArray = (sourceInfoMaps != null)
+            ? new JsSourceMap[fragmentCount] : null;
 
-          JsAbstractTextTransformer transformer =
-              new JsNoopTransformer(code, statementRanges, infoMap);
+        java.util.stream.IntStream.range(0, fragmentCount).parallel().forEach(i -> {
+          generateSingleFragment(i, jjsMap, jsFragments, ranges, localSizeBreakdowns,
+              sourceInfoMapArray, sourceMapsEnabled, permutationId);
+        });
 
-          /*
-           * Cut generated JS up on class boundaries and re-link the source (possibly making use of
-           * source from previous compiles, thus making it possible to perform partial recompiles).
-           */
-          if (options.isIncrementalCompileEnabled()) {
-            transformer = new JsTypeLinker(logger, transformer, v.getClassRanges(),
-                v.getProgramClassRange(), getMinimalRebuildCache(), jprogram.typeOracle);
-            transformer.exec();
-          }
-
-          /*
-           * Reorder function decls to improve compression ratios. Also restructures the top level
-           * blocks into sub-blocks if they exceed 32767 statements.
-           */
-          // TODO(cromwellian) move to the Js AST optimization, re-enable sourcemaps + clustering
-          if (!sourceMapsEnabled && !options.isClosureCompilerFormatEnabled()
-              && options.shouldClusterSimilarFunctions()
-              && options.getNamespace() == JsNamespaceOption.NONE
-              && options.getOutput() == JsOutputOption.OBFUSCATED) {
-            try (SimpleEvent ignored2 = new SimpleEvent("Function Clusterer")) {
-              transformer = new JsFunctionClusterer(transformer);
-              transformer.exec();
-            }
-          }
-
-          jsFragments[i] = transformer.getJs();
-          event.jsBytes = jsFragments[i].getBytes(StandardCharsets.UTF_8).length;
-          ranges[i] = transformer.getStatementRanges();
-          if (sizeBreakdowns != null) {
-            sizeBreakdowns[i] = v.getSizeBreakdown();
-          }
-          if (sourceInfoMaps != null) {
-            sourceInfoMaps.add(transformer.getSourceInfoMap());
+        if (sourceInfoMaps != null) {
+          for (JsSourceMap map : sourceInfoMapArray) {
+            sourceInfoMaps.add(map);
           }
         }
+      } else {
+        // Single fragment or incremental: process sequentially
+        for (int i = 0; i < fragmentCount; i++) {
+          JsSourceMap[] sourceInfoMapArray = (sourceInfoMaps != null)
+              ? new JsSourceMap[fragmentCount] : null;
+          generateSingleFragment(i, jjsMap, jsFragments, ranges, sizeBreakdowns,
+              sourceInfoMapArray, sourceMapsEnabled, permutationId);
+          if (sourceInfoMaps != null) {
+            sourceInfoMaps.add(sourceInfoMapArray[i]);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Generate Js code for a single fragment. Thread-safe when each fragment index is distinct.
+   */
+  private void generateSingleFragment(int i, JavaToJavaScriptMap jjsMap,
+      String[] jsFragments, StatementRanges[] ranges, SizeBreakdown[] sizeBreakdowns,
+      JsSourceMap[] sourceInfoMapArray, boolean sourceMapsEnabled, int permutationId) {
+
+    try (JsFragmentEvent event = new JsFragmentEvent(permutationId, i)) {
+      DefaultTextOutput out = new DefaultTextOutput(!options.isIncrementalCompileEnabled() &&
+          options.getOutput().shouldMinimize());
+      JsReportGenerationVisitor v = new JsReportGenerationVisitor(out, jjsMap,
+          options.isJsonSoycEnabled(),
+          new JsToStringGenerationVisitor.PrintOptions(
+              false, options.getOutput() == JsOutputOption.OBFUSCATED,
+              options.getOutput() == JsOutputOption.OBFUSCATED));
+      v.accept(jsProgram.getFragmentBlock(i));
+
+      StatementRanges statementRanges = v.getStatementRanges();
+      String code = out.toString();
+      JsSourceMap infoMap = (sourceInfoMapArray != null) ? v.getSourceInfoMap() : null;
+
+      JsAbstractTextTransformer transformer =
+          new JsNoopTransformer(code, statementRanges, infoMap);
+
+      /*
+       * Cut generated JS up on class boundaries and re-link the source (possibly making use of
+       * source from previous compiles, thus making it possible to perform partial recompiles).
+       */
+      if (options.isIncrementalCompileEnabled()) {
+        transformer = new JsTypeLinker(logger, transformer, v.getClassRanges(),
+            v.getProgramClassRange(), getMinimalRebuildCache(), jprogram.typeOracle);
+        transformer.exec();
+      }
+
+      /*
+       * Reorder function decls to improve compression ratios. Also restructures the top level
+       * blocks into sub-blocks if they exceed 32767 statements.
+       */
+      // TODO(cromwellian) move to the Js AST optimization, re-enable sourcemaps + clustering
+      if (!sourceMapsEnabled && !options.isClosureCompilerFormatEnabled()
+          && options.shouldClusterSimilarFunctions()
+          && options.getNamespace() == JsNamespaceOption.NONE
+          && options.getOutput() == JsOutputOption.OBFUSCATED) {
+        transformer = new JsFunctionClusterer(transformer);
+        transformer.exec();
+      }
+
+      jsFragments[i] = transformer.getJs();
+      event.jsBytes = jsFragments[i].getBytes(StandardCharsets.UTF_8).length;
+      ranges[i] = transformer.getStatementRanges();
+      if (sizeBreakdowns != null) {
+        sizeBreakdowns[i] = v.getSizeBreakdown();
+      }
+      if (sourceInfoMapArray != null) {
+        sourceInfoMapArray[i] = transformer.getSourceInfoMap();
       }
     }
   }
@@ -1026,8 +1062,10 @@ public final class JavaToJavaScriptCompiler {
         // Remove unused functions if possible.
         stats.recordModified(JsUnusedFunctionRemover.exec(jsProgram));
 
-        nodeCount = jsProgram.getNodeCount();
         mods = stats.getNumMods();
+        // Skip expensive full-tree node count when no modifications were made;
+        // if mods==0 both change rates will be 0 and the loop will break.
+        nodeCount = mods > 0 ? jsProgram.getNodeCount() : nodeCount;
       }
 
       AstDumper.maybeDumpAST(jsProgram);
@@ -1446,6 +1484,14 @@ public final class JavaToJavaScriptCompiler {
     int passLimit = atMaxLevel ? MAX_PASSES : options.getOptimizationLevel();
     float minChangeRate = atMaxLevel ? FIXED_POINT_CHANGE_RATE : EFFICIENT_CHANGE_RATE;
     OptimizerContext optimizerCtx = new FullOptimizerContext(jprogram);
+
+    // Track which passes made modifications last iteration; skip quiescent passes.
+    // Indices: 0=Pruner, 1=Finalizer, 2=MakeCallsStatic, 3=TypeTightener,
+    // 4=MethodCallTightener, 5=MethodCallSpecializer, 6=DeadCodeElimination,
+    // 7=MethodInliner, 8=SameParameterValueOptimizer, 9=EnumOrdinalizer
+    boolean[] passActive = new boolean[10];
+    java.util.Arrays.fill(passActive, true); // all active on first pass
+
     while (true) {
       passCount++;
       if (passCount > passLimit) {
@@ -1460,29 +1506,78 @@ public final class JavaToJavaScriptCompiler {
 
       int lastNodeCount = nodeCount;
       int mods;
+      boolean anyPassMadeMods = false;
 
       try (OptimizerStats stats = OptimizerStats.javaPass(passCount)) {
         stats.recordVisits(nodeCount);
         JavaAstVerifier.assertProgramIsConsistent(jprogram);
-        stats.recordModified(Pruner.exec(jprogram, true, optimizerCtx));
-        stats.recordModified(Finalizer.exec(jprogram, optimizerCtx));
-        stats.recordModified(MakeCallsStatic.exec(jprogram, options.shouldAddRuntimeChecks(),
-            optimizerCtx));
-        stats.recordModified(TypeTightener.exec(jprogram, optimizerCtx));
-        stats.recordModified(MethodCallTightener.exec(jprogram, optimizerCtx));
+
+        int passMods;
+        passMods = passActive[0] ? Pruner.exec(jprogram, true, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[0] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
+        passMods = passActive[1] ? Finalizer.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[1] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
+        passMods = passActive[2] ? MakeCallsStatic.exec(jprogram, options.shouldAddRuntimeChecks(),
+            optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[2] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
+        passMods = passActive[3] ? TypeTightener.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[3] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
+        passMods = passActive[4] ? MethodCallTightener.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[4] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
         // Note: Specialization should be done before inlining.
-        stats.recordModified(MethodCallSpecializer.exec(jprogram, optimizerCtx));
-        stats.recordModified(DeadCodeElimination.exec(jprogram, optimizerCtx));
-        stats.recordModified(MethodInliner.exec(jprogram, optimizerCtx));
+        passMods = passActive[5] ? MethodCallSpecializer.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[5] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
+        passMods = passActive[6] ? DeadCodeElimination.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[6] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
+        passMods = passActive[7] ? MethodInliner.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[7] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
         if (options.shouldInlineLiteralParameters()) {
-          stats.recordModified(SameParameterValueOptimizer.exec(jprogram, optimizerCtx));
+          passMods = passActive[8] ? SameParameterValueOptimizer.exec(jprogram, optimizerCtx) : 0;
+          stats.recordModified(passMods);
+          passActive[8] = passMods > 0;
+          anyPassMadeMods |= passMods > 0;
         }
         if (options.shouldOrdinalizeEnums()) {
-          stats.recordModified(EnumOrdinalizer.exec(jprogram, optimizerCtx));
+          passMods = passActive[9] ? EnumOrdinalizer.exec(jprogram, optimizerCtx) : 0;
+          stats.recordModified(passMods);
+          passActive[9] = passMods > 0;
+          anyPassMadeMods |= passMods > 0;
         }
 
-        nodeCount = jprogram.getNodeCount();
         mods = stats.getNumMods();
+        // Skip expensive full-tree node count when no modifications were made;
+        // if mods==0 both change rates will be 0 and the loop will break.
+        nodeCount = mods > 0 ? jprogram.getNodeCount() : nodeCount;
+      }
+
+      // If any pass made modifications, re-enable all passes next iteration
+      // since one pass's changes can create new opportunities for others.
+      if (anyPassMadeMods) {
+        java.util.Arrays.fill(passActive, true);
       }
 
       float nodeChangeRate = mods / (float) lastNodeCount;

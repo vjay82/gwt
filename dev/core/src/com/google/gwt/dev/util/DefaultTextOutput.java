@@ -15,25 +15,19 @@
  */
 package com.google.gwt.dev.util;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-
 /**
  * Adapts {@link TextOutput} to an internal text buffer.
+ * Uses StringBuilder directly for unsynchronized, fast output.
  */
 public class DefaultTextOutput extends AbstractTextOutput {
 
-  private final StringWriter sw = new StringWriter();
-  private final PrintWriter out;
-
   public DefaultTextOutput(boolean compact) {
     super(compact);
-    setPrintWriter(out = new PrintWriter(sw));
+    setStringBuilder(new StringBuilder());
   }
 
   @Override
   public String toString() {
-    out.flush();
-    return sw.toString();
+    return getStringBuilder().toString();
   }
 }

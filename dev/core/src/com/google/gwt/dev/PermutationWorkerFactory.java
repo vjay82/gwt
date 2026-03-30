@@ -332,8 +332,7 @@ public abstract class PermutationWorkerFactory {
       int workersNeeded, int localWorkers, List<PermutationWorker> workers)
       throws UnableToCompleteException {
     if (localWorkers <= WORKERS_AUTO) {
-      // TODO: something smarter?
-      localWorkers = 1;
+      localWorkers = Math.max(1, Runtime.getRuntime().availableProcessors());
     }
 
     for (PermutationWorkerFactory factory : PermutationWorkerFactory.createAll(logger)) {

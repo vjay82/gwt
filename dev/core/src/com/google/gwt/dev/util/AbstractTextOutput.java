@@ -28,6 +28,7 @@ public abstract class AbstractTextOutput implements TextOutput {
   private char[][] indents = new char[][] {new char[0]};
   private boolean justNewlined;
   private PrintWriter out;
+  private StringBuilder buf;
   private int position = 0;
   private int line = 0;
   private int column = 0;
@@ -73,7 +74,11 @@ public abstract class AbstractTextOutput implements TextOutput {
 
   @Override
   public void newline() {
-    out.print('\n');
+    if (buf != null) {
+      buf.append('\n');
+    } else {
+      out.print('\n');
+    }
     position++;
     line++;
     column = 0;
@@ -90,7 +95,11 @@ public abstract class AbstractTextOutput implements TextOutput {
   @Override
   public void print(char c) {
     maybeIndent();
-    out.print(c);
+    if (buf != null) {
+      buf.append(c);
+    } else {
+      out.print(c);
+    }
     position++;
     column++;
     justNewlined = false;
@@ -114,7 +123,11 @@ public abstract class AbstractTextOutput implements TextOutput {
   public void printOpt(char c) {
     if (!compact) {
       maybeIndent();
-      out.print(c);
+      if (buf != null) {
+        buf.append(c);
+      } else {
+        out.print(c);
+      }
       position += 1;
       column++;
     }
@@ -140,6 +153,14 @@ public abstract class AbstractTextOutput implements TextOutput {
     this.out = out;
   }
 
+  protected void setStringBuilder(StringBuilder buf) {
+    this.buf = buf;
+  }
+
+  protected StringBuilder getStringBuilder() {
+    return buf;
+  }
+
   private void maybeIndent() {
     if (justNewlined && !compact) {
       printAndCount(indents[identLevel]);
@@ -150,12 +171,20 @@ public abstract class AbstractTextOutput implements TextOutput {
   private void printAndCount(char[] chars) {
     position += chars.length;
     column += chars.length;
-    out.print(chars);
+    if (buf != null) {
+      buf.append(chars);
+    } else {
+      out.print(chars);
+    }
   }
 
   private void printAndCount(String str) {
     position += str.length();
     column += str.length();
-    out.print(str);
+    if (buf != null) {
+      buf.append(str);
+    } else {
+      out.print(str);
+    }
   }
 }

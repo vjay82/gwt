@@ -84,7 +84,7 @@ public class ThreadedPermutationWorkerFactory extends PermutationWorkerFactory {
     logger.log(TreeLogger.SPAM, "Creating ThreadedPermutationWorkers");
 
     numWorkers = Math.min(numWorkers, Integer.getInteger(MAX_THREADS_PROPERTY,
-        1));
+        Runtime.getRuntime().availableProcessors()));
 
     if (numWorkers == 0) {
       return Collections.emptyList();

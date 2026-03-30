@@ -265,9 +265,20 @@ public final class JsSafeCloner {
 
     @Override
     public void endVisit(JsTemplateLiteral x, JsContext ctx) {
-      // Template literals with interpolations may have side effects.
-      successful = false;
-      stack.push(null);
+      if (x.getTag() != null) {
+        // Tagged templates call the tag function, cannot be safely hoisted.
+        successful = false;
+        stack.push(null);
+        return;
+      }
+      JsTemplateLiteral toReturn = new JsTemplateLiteral(x.getSourceInfo());
+      toReturn.getStringParts().addAll(x.getStringParts());
+      List<JsExpression> exprs = toReturn.getExpressionParts();
+      int size = x.getExpressionParts().size();
+      while (size-- > 0) {
+        exprs.add(0, stack.pop());
+      }
+      stack.push(toReturn);
     }
 
     @Override
@@ -277,9 +288,8 @@ public final class JsSafeCloner {
 
     @Override
     public void endVisit(JsSpread x, JsContext ctx) {
-      // Spread expressions cannot be safely hoisted.
-      successful = false;
-      stack.push(null);
+      JsSpread toReturn = new JsSpread(x.getSourceInfo(), stack.pop());
+      stack.push(toReturn);
     }
 
     @Override
