@@ -42,7 +42,10 @@
     <call-subproject subproject="codeserver" subtarget="build"/>
     <call-subproject subproject="requestfactory" subtarget="build"/>
     <call-subproject subproject="servlet" subtarget="build"/>
-    <antcall target="strip-gwt-dev"/>
+  </target>
+
+  <target name="buildForMira" depends="buildonly,strip-gwt-dev" description="building for NTT Mira">
+
   </target>
 
   <target name="strip-gwt-dev"
