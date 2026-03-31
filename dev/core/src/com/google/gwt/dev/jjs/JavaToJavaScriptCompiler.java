@@ -141,6 +141,7 @@ import com.google.gwt.dev.js.JsForceInliningChecker;
 import com.google.gwt.dev.js.JsIncrementalNamer;
 import com.google.gwt.dev.js.JsInliner;
 import com.google.gwt.dev.js.JsLiteralInterner;
+import com.google.gwt.dev.js.JsTrampolineRemover;
 import com.google.gwt.dev.js.JsNamer.IllegalNameException;
 import com.google.gwt.dev.js.JsNamespaceChooser;
 import com.google.gwt.dev.js.JsNamespaceOption;
@@ -1059,6 +1060,8 @@ public final class JavaToJavaScriptCompiler {
         stats.recordModified(JsStaticEval.exec(jsProgram));
         // Inline Js function invocations
         stats.recordModified(JsInliner.exec(jsProgram, toInline));
+        // Eliminate trampoline functions that just delegate to another function
+        stats.recordModified(JsTrampolineRemover.exec(jsProgram));
         // Remove unused functions if possible.
         stats.recordModified(JsUnusedFunctionRemover.exec(jsProgram));
 
