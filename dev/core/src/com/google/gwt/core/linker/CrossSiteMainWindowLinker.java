@@ -17,6 +17,8 @@
 package com.google.gwt.core.linker;
 
 import com.google.gwt.core.ext.LinkerContext;
+import com.google.gwt.core.ext.TreeLogger;
+import com.google.gwt.core.ext.UnableToCompleteException;
 
 /**
  * A linker that installs compiled JavaScript directly into the main browser window
@@ -47,5 +49,12 @@ public class CrossSiteMainWindowLinker extends CrossSiteIframeLinker {
   @Override
   protected boolean shouldInstallCode(LinkerContext context) {
     return false;
+  }
+
+  @Override
+  protected String getModulePrefix(TreeLogger logger, LinkerContext context, String strongName)
+      throws UnableToCompleteException {
+    return super.getModulePrefix(logger, context, strongName)
+        .replace("var $wnd = $wnd || window.parent;", ""); // already defined by loader, also window.parent would not be correct
   }
 }
