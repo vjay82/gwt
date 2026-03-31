@@ -1,10 +1,13 @@
 ## This is a fork!
 
-This is a fork of https://github.com/gwtproject/gwt. My goal was to undertake some key improvements (with the help of AI) that will probably never go upstream. Focus is: smaller output size, better performance and an up-to-date syntax in JSNI and in emitted JS.
+This is a fork of https://github.com/gwtproject/gwt. My goal was to undertake some key improvements (with the help of AI) that will probably never go upstream. Focus is: smaller output size, better performance and support of an up-to-date JS syntax in JSNI and in emitted code.
 
-I gave J2CL more than one shot but I neither love its tooling nor its limitations. I prefer mixing JS and Java freely INSIDE my app. A lot of improvements are already implemented in our build stack (not in GWT itself), but will see, if I will add them here too at a later point.
+I gave J2CL more than one shot but I neither love its tooling nor its limitations. I prefer mixing JS and Java freely INSIDE my app and love code splitting of GWT. A lot of improvements are already implemented in our build stack (not in GWT itself), but will see, if I will add them here too at a later point.
 
 Currently based on GWT 2.13 (with most assigned PRs for 2.14 which did not break our test pipeline).
+
+Also implemented a <add-linker name="main_window" /> which installs the script in the main window (not iframe) while still supporting async fragment loading. No more headaches with native libraries ($wnd vs window).
+
 
 ## GWT
 

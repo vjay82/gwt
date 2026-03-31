@@ -16,6 +16,7 @@
 <module>
   <define-linker name="xsiframe" class="com.google.gwt.core.linker.CrossSiteIframeLinker" />
   <define-linker name="direct_install" class="com.google.gwt.core.linker.DirectInstallLinker" />
+  <define-linker name="main_window" class="com.google.gwt.core.linker.CrossSiteMainWindowLinker" />
   <define-configuration-property name="xsiframe.failIfScriptTag" is-multi-valued="FALSE"/>
 
   <!-- Properties controlling behavior of the linker (overridden by Super Dev Mode) -->
@@ -50,6 +51,7 @@
     <any>
       <when-linker-added name="xsiframe" />
       <when-linker-added name="direct_install" />
+      <when-linker-added name="main_window" />
     </any>
   </replace-with>
 
