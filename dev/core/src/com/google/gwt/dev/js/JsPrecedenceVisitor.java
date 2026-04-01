@@ -19,6 +19,7 @@ import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
 import com.google.gwt.dev.js.ast.JsArrowFunction;
 import com.google.gwt.dev.js.ast.JsAwait;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBlock;
 import com.google.gwt.dev.js.ast.JsBooleanLiteral;
@@ -281,6 +282,12 @@ class JsPrecedenceVisitor extends JsVisitor {
 
   @Override
   public boolean visit(JsNullLiteral x, JsContext ctx) {
+    answer = 17; // primary
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsBigIntLiteral x, JsContext ctx) {
     answer = 17; // primary
     return false;
   }

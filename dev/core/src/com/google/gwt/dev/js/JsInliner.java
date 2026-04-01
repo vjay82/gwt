@@ -22,6 +22,7 @@ import com.google.gwt.dev.jjs.SourceInfo;
 import com.google.gwt.dev.jjs.impl.OptimizerStats;
 import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBinaryOperator;
 import com.google.gwt.dev.js.ast.JsBlock;
@@ -322,6 +323,12 @@ public class JsInliner {
     @Override
     public void endVisit(JsNullLiteral x, JsContext ctx) {
       complexity += "null".length();
+    }
+
+    @Override
+    public void endVisit(JsBigIntLiteral x, JsContext ctx) {
+      // Duplicate constants will be interned so they are counted as an obfuscated identifier.
+      complexity += AVERAGE_OBFUSCATED_IDENTIFIER_LENGTH;
     }
 
     @Override

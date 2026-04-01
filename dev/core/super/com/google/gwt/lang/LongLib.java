@@ -15,359 +15,340 @@
  */
 package com.google.gwt.lang;
 
-import com.google.gwt.lang.BigLongLibBase.BigLong;
-
 /**
- * Implements a Java <code>long</code> in a way that can be translated to JavaScript.
+ * Implements a Java {@code long} in a way that can be translated to JavaScript.
+ *
+ * <p>This implementation uses native JavaScript {@code BigInt} for all long operations.
+ * At runtime, long values are represented as BigInt primitives, providing exact 64-bit
+ * signed integer semantics with native performance. The {@code LongEmul} type is a
+ * compile-time placeholder that maps to BigInt at runtime.
+ *
+ * <p>A JVM fallback mode ({@code RUN_IN_JVM = true}) is retained so that unit tests
+ * for this class can still execute on a standard JVM.
  */
 public class LongLib {
 
-/**
-   * Abstraction for long emulation. The emulation could be done using FastLong if the number is
-   * small enough or BigLong if the number is big. Note that, the class here is just a place holder
-   * and would normally extend JavaScriptObject if there wasn't a JVM mode.
+  /**
+   * Opaque wrapper for a long value. In JavaScript this is a BigInt primitive.
+   * In JVM test mode it wraps a Java {@code long}.
    */
   static class LongEmul {
-    SmallLong small;
-    BigLong big;
+    long value; // used only in JVM mode
   }
 
   /**
-   * A LongEmul represented as double number.
-   */
-  static class SmallLong {
-    double d;
-  }
-
-  /**
-   * Allow standalone Java tests such as LongLibTest/LongLibJreTest to run this
-   * code.
+   * Allow standalone Java tests to run this code on a standard JVM
+   * (where BigInt is not available).
    */
   protected static boolean RUN_IN_JVM = false;
 
-  public static LongEmul add(LongEmul a, LongEmul b) {
-    if (isSmallLong(a) && isSmallLong(b)) {
-      double result = asDouble(a) + asDouble(b);
-      if (isSafeIntegerRange(result)) {
-        return createSmallLongEmul(result);
-      }
-    }
+  // ---- Arithmetic operations ----
 
-    return createLongEmul(BigLongLib.add(toBigLong(a), toBigLong(b)));
+  public static LongEmul add(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) + jvmUnwrap(b));
+    }
+    return add0(a, b);
   }
+
+  private static native LongEmul add0(LongEmul a, LongEmul b) /*-{
+    return BigInt.asIntN(64, a + b);
+  }-*/;
 
   public static LongEmul sub(LongEmul a, LongEmul b) {
-    if (isSmallLong(a) && isSmallLong(b)) {
-      double result = asDouble(a) - asDouble(b);
-      if (isSafeIntegerRange(result)) {
-        return createSmallLongEmul(result);
-      }
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) - jvmUnwrap(b));
     }
-
-    return createLongEmul(BigLongLib.sub(toBigLong(a), toBigLong(b)));
+    return sub0(a, b);
   }
 
-  public static LongEmul neg(LongEmul a) {
-    // TODO: add test for max neg number
-    if (isSmallLong(a)) {
-      double result = 0 - asDouble(a);
-      if (!Double.isNaN(result)) {
-        return createSmallLongEmul(result);
-      }
-    }
-
-    return createLongEmul(BigLongLib.neg(asBigLong(a)));
-  }
-
-  public static boolean gt(LongEmul a, LongEmul b) {
-    return compare(a, b) > 0;
-  }
-
-  public static boolean gte(LongEmul a, LongEmul b) {
-    return compare(a, b) >= 0;
-  }
-
-  public static boolean lt(LongEmul a, LongEmul b) {
-    return compare(a, b) < 0;
-  }
-
-  public static boolean lte(LongEmul a, LongEmul b) {
-    return compare(a, b) <= 0;
-  }
-
-  public static boolean eq(LongEmul a, LongEmul b) {
-    return compare(a, b) == 0;
-  }
-
-  public static boolean neq(LongEmul a, LongEmul b) {
-    return compare(a, b) != 0;
-  }
-
-  // VisibleForTesting
-  static double compare(LongEmul a, LongEmul b) {
-    if (isSmallLong(a) && isSmallLong(b)) {
-      double result = asDouble(a) - asDouble(b);
-      if (!Double.isNaN(result)) {
-        return result;
-      }
-    }
-
-    return BigLongLib.compare(toBigLong(a), toBigLong(b));
-  }
-
-  public static LongEmul div(LongEmul a, LongEmul b) {
-    if (isSmallLong(a) && isSmallLong(b)) {
-      double result = asDouble(a) / asDouble(b);
-      if (isSafeIntegerRange(result)) {
-        return createSmallLongEmul(truncate(result));
-      }
-    }
-
-    return createLongEmul(BigLongLib.div(toBigLong(a), toBigLong(b)));
-  }
-
-  public static LongEmul mod(LongEmul a, LongEmul b) {
-    if (isSmallLong(a) && isSmallLong(b)) {
-      double result = asDouble(a) % asDouble(b);
-      if (isSafeIntegerRange(result)) {
-        return createSmallLongEmul(result);
-      }
-    }
-
-    return createLongEmul(BigLongLib.mod(toBigLong(a), toBigLong(b)));
-  }
+  private static native LongEmul sub0(LongEmul a, LongEmul b) /*-{
+    return BigInt.asIntN(64, a - b);
+  }-*/;
 
   public static LongEmul mul(LongEmul a, LongEmul b) {
-    if (isSmallLong(a) && isSmallLong(b)) {
-      double result = asDouble(a) * asDouble(b);
-      if (isSafeIntegerRange(result)) {
-        return createSmallLongEmul(result);
-      }
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) * jvmUnwrap(b));
     }
-
-    return createLongEmul(BigLongLib.mul(toBigLong(a), toBigLong(b)));
+    return mul0(a, b);
   }
+
+  private static native LongEmul mul0(LongEmul a, LongEmul b) /*-{
+    return BigInt.asIntN(64, a * b);
+  }-*/;
+
+  public static LongEmul div(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) / jvmUnwrap(b));
+    }
+    return div0(a, b);
+  }
+
+  private static native LongEmul div0(LongEmul a, LongEmul b) /*-{
+    // BigInt division truncates toward zero (matching Java semantics).
+    // BigInt.asIntN handles the MIN_VALUE / -1 overflow case.
+    return BigInt.asIntN(64, a / b);
+  }-*/;
+
+  public static LongEmul mod(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) % jvmUnwrap(b));
+    }
+    return mod0(a, b);
+  }
+
+  private static native LongEmul mod0(LongEmul a, LongEmul b) /*-{
+    // BigInt % has same sign-of-dividend semantics as Java.
+    return a % b;
+  }-*/;
+
+  public static LongEmul neg(LongEmul a) {
+    if (RUN_IN_JVM) {
+      return jvmWrap(-jvmUnwrap(a));
+    }
+    return neg0(a);
+  }
+
+  private static native LongEmul neg0(LongEmul a) /*-{
+    return BigInt.asIntN(64, -a);
+  }-*/;
+
+  // ---- Bitwise operations ----
 
   public static LongEmul not(LongEmul a) {
-    return createLongEmul(BigLongLib.not(toBigLong(a)));
+    if (RUN_IN_JVM) {
+      return jvmWrap(~jvmUnwrap(a));
+    }
+    return not0(a);
   }
+
+  private static native LongEmul not0(LongEmul a) /*-{
+    // ~x on a 64-bit signed BigInt yields a 64-bit signed result.
+    return ~a;
+  }-*/;
 
   public static LongEmul and(LongEmul a, LongEmul b) {
-    return createLongEmul(BigLongLib.and(toBigLong(a), toBigLong(b)));
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) & jvmUnwrap(b));
+    }
+    return and0(a, b);
   }
+
+  private static native LongEmul and0(LongEmul a, LongEmul b) /*-{
+    return a & b;
+  }-*/;
 
   public static LongEmul or(LongEmul a, LongEmul b) {
-    return createLongEmul(BigLongLib.or(toBigLong(a), toBigLong(b)));
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) | jvmUnwrap(b));
+    }
+    return or0(a, b);
   }
+
+  private static native LongEmul or0(LongEmul a, LongEmul b) /*-{
+    return a | b;
+  }-*/;
 
   public static LongEmul xor(LongEmul a, LongEmul b) {
-    return createLongEmul(BigLongLib.xor(toBigLong(a), toBigLong(b)));
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) ^ jvmUnwrap(b));
+    }
+    return xor0(a, b);
   }
+
+  private static native LongEmul xor0(LongEmul a, LongEmul b) /*-{
+    return a ^ b;
+  }-*/;
+
+  // ---- Shift operations ----
+  // Java masks shift count to 0-63 for longs. BigInt shift requires BigInt operand.
 
   public static LongEmul shl(LongEmul a, int n) {
-    return createLongEmul(BigLongLib.shl(toBigLong(a), n));
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) << (n & 63));
+    }
+    return shl0(a, n);
   }
+
+  private static native LongEmul shl0(LongEmul a, int n) /*-{
+    return BigInt.asIntN(64, a << BigInt(n & 63));
+  }-*/;
 
   public static LongEmul shr(LongEmul a, int n) {
-    return createLongEmul(BigLongLib.shr(toBigLong(a), n));
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) >> (n & 63));
+    }
+    return shr0(a, n);
   }
+
+  private static native LongEmul shr0(LongEmul a, int n) /*-{
+    // Arithmetic right shift; result stays in 64-bit signed range.
+    return a >> BigInt(n & 63);
+  }-*/;
 
   public static LongEmul shru(LongEmul a, int n) {
-    return createLongEmul(BigLongLib.shru(toBigLong(a), n));
-  }
-
-  public static LongEmul fromDouble(double value) {
-    if (isSafeIntegerRange(value)) {
-      return createSmallLongEmul(truncate(value));
+    if (RUN_IN_JVM) {
+      return jvmWrap(jvmUnwrap(a) >>> (n & 63));
     }
-
-    return createLongEmul(BigLongLib.fromDouble(value));
+    return shru0(a, n);
   }
 
-  public static double toDouble(LongEmul a) {
-    if (isSmallLong(a)) {
-      double d = asDouble(a);
-      // We need to kill negative zero because that could never happen in long but our double based
-      // representation may result with that.
-      return d == -0.0 ? 0 : d;
+  private static native LongEmul shru0(LongEmul a, int n) /*-{
+    // BigInt has no >>> operator. Convert to unsigned, shift, convert back.
+    return BigInt.asIntN(64, BigInt.asUintN(64, a) >> BigInt(n & 63));
+  }-*/;
+
+  // ---- Comparison operations ----
+
+  public static boolean gt(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmUnwrap(a) > jvmUnwrap(b);
     }
-
-    return BigLongLib.toDouble(asBigLong(a));
+    return gt0(a, b);
   }
+
+  private static native boolean gt0(LongEmul a, LongEmul b) /*-{
+    return a > b;
+  }-*/;
+
+  public static boolean gte(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmUnwrap(a) >= jvmUnwrap(b);
+    }
+    return gte0(a, b);
+  }
+
+  private static native boolean gte0(LongEmul a, LongEmul b) /*-{
+    return a >= b;
+  }-*/;
+
+  public static boolean lt(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmUnwrap(a) < jvmUnwrap(b);
+    }
+    return lt0(a, b);
+  }
+
+  private static native boolean lt0(LongEmul a, LongEmul b) /*-{
+    return a < b;
+  }-*/;
+
+  public static boolean lte(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmUnwrap(a) <= jvmUnwrap(b);
+    }
+    return lte0(a, b);
+  }
+
+  private static native boolean lte0(LongEmul a, LongEmul b) /*-{
+    return a <= b;
+  }-*/;
+
+  public static boolean eq(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmUnwrap(a) == jvmUnwrap(b);
+    }
+    return eq0(a, b);
+  }
+
+  private static native boolean eq0(LongEmul a, LongEmul b) /*-{
+    return a === b;
+  }-*/;
+
+  public static boolean neq(LongEmul a, LongEmul b) {
+    if (RUN_IN_JVM) {
+      return jvmUnwrap(a) != jvmUnwrap(b);
+    }
+    return neq0(a, b);
+  }
+
+  private static native boolean neq0(LongEmul a, LongEmul b) /*-{
+    return a !== b;
+  }-*/;
+
+  // ---- Conversion operations ----
 
   public static LongEmul fromInt(int value) {
-    return createSmallLongEmul(value);
+    if (RUN_IN_JVM) {
+      return jvmWrap(value);
+    }
+    return fromInt0(value);
   }
+
+  private static native LongEmul fromInt0(int value) /*-{
+    return BigInt(value);
+  }-*/;
+
+  public static LongEmul fromDouble(double value) {
+    if (RUN_IN_JVM) {
+      return jvmWrap((long) value);
+    }
+    return fromDouble0(value);
+  }
+
+  private static native LongEmul fromDouble0(double value) /*-{
+    // Follow Java semantics for (long) cast:
+    // NaN -> 0, too large -> MAX_VALUE, too small -> MIN_VALUE
+    if (value !== value) return BigInt(0);                          // NaN
+    if (value >= 0x8000000000000000) return BigInt("0x7fffffffffffffff");  // >= 2^63 -> MAX_VALUE
+    if (value < -0x8000000000000000) return -BigInt("0x8000000000000000"); // < -2^63 -> MIN_VALUE
+    return BigInt(Math.trunc(value));
+  }-*/;
 
   public static int toInt(LongEmul a) {
-    if (isSmallLong(a)) {
-      return coerceToInt(asDouble(a));
+    if (RUN_IN_JVM) {
+      return (int) jvmUnwrap(a);
     }
-
-    return BigLongLib.toInt(asBigLong(a));
+    return toInt0(a);
   }
+
+  private static native int toInt0(LongEmul a) /*-{
+    return Number(BigInt.asIntN(32, a));
+  }-*/;
+
+  public static double toDouble(LongEmul a) {
+    if (RUN_IN_JVM) {
+      return (double) jvmUnwrap(a);
+    }
+    return toDouble0(a);
+  }
+
+  private static native double toDouble0(LongEmul a) /*-{
+    return Number(a);
+  }-*/;
 
   public static String toString(LongEmul a) {
-    if (isSmallLong(a)) {
-      return toString(asDouble(a));
+    if (RUN_IN_JVM) {
+      return Long.toString(jvmUnwrap(a));
     }
-
-    return BigLongLib.toString(asBigLong(a));
+    return toString0(a);
   }
 
-  // Called by compiler to generate constants.
-  public static long[] getAsLongArray(long l) {
-    if (isSafeIntegerRange(l)) {
-      return new long[] {l};
-    }
-
-    return BigLongLib.getAsLongArray(l);
-  }
-
-  // TODO(goktug): Safe integer range could potentially increased update up to 53 bits.
-  private static boolean isSafeIntegerRange(double value) {
-    return -BigLongLibBase.TWO_PWR_44_DBL < value && value < BigLongLibBase.TWO_PWR_44_DBL;
-  }
-
-  private static double truncate(double value) {
-    // Same as Math.trunc() but not available everywhere.
-    return value < 0 ? Math.ceil(value) : Math.floor(value);
-  }
-
-  private static int coerceToInt(double value) {
-    if (LongLib.RUN_IN_JVM) {
-      return (int) (long) value;
-    }
-    return coerceToInt0(value);
-  }
-
-  private static native int coerceToInt0(double value)/*-{
-    return value | 0;
+  private static native String toString0(LongEmul a) /*-{
+    return String(a);
   }-*/;
 
-  private static String toString(double value) {
-    if (LongLib.RUN_IN_JVM) {
-      return String.valueOf((long) value);
-    }
-    return String.valueOf(value);
+  // ---- JVM test-mode helpers ----
+
+  private static LongEmul jvmWrap(long value) {
+    LongEmul emul = new LongEmul();
+    emul.value = value;
+    return emul;
   }
 
-  private static double asDouble(LongEmul value) {
-    return asDouble(asSmallLong(value));
+  private static long jvmUnwrap(LongEmul emul) {
+    return emul.value;
   }
 
-  private static SmallLong asSmallLong(LongEmul value) {
-    if (LongLib.RUN_IN_JVM) {
-      return value.small;
-    }
-    return asSmallLong0(value);
-  }
+  // ---- Utility methods retained for external callers (e.g. jsinterop InternalJsUtil) ----
 
-  private static native SmallLong asSmallLong0(LongEmul value)/*-{
-    return value;
-  }-*/;
-
-  private static double asDouble(SmallLong value) {
-    if (LongLib.RUN_IN_JVM) {
-      return value == null ? Double.NaN : value.d;
-    }
-    return asDouble0(value);
-  }
-
-  private static native double asDouble0(SmallLong value)/*-{
-    return value;
-  }-*/;
-
-  private static boolean isSmallLong(LongEmul value) {
-    if (LongLib.RUN_IN_JVM) {
-      return value.small != null;
-    }
-    return isSmallLong0(value);
-  }
-
-  private static native boolean isSmallLong0(LongEmul value)/*-{
-    return typeof(value) === 'number';
-  }-*/;
-
-  // Visible for testing
-  static BigLong asBigLong(LongEmul value) {
-    if (LongLib.RUN_IN_JVM) {
-      return value.big;
-    }
-    return asBigLong0(value);
-  }
-
-  private static native BigLong asBigLong0(LongEmul value)/*-{
-    return value;
-  }-*/;
-
-  private static BigLong toBigLong(LongEmul value) {
-    return isSmallLong(value) ? toBigLong(asSmallLong(value)) : asBigLong(value);
-  }
-
-  private static BigLong toBigLong(SmallLong longValue) {
-    double value = asDouble(longValue);
-    int a3 = 0;
-    if (value < 0) {
-      // Convert to a positive number that will have the exact same first 44 bits
-      value += BigLongLibBase.TWO_PWR_44_DBL;
-      a3 = BigLongLib.MASK_2;
-    }
-    int a1 = (int) (value / BigLongLibBase.TWO_PWR_22_DBL);
-    int a0 = (int) (value - a1 * BigLongLibBase.TWO_PWR_22_DBL);
-    return BigLongLibBase.create(a0, a1, a3);
-  }
-
-  private static LongEmul createSmallLongEmul(double value) {
-    if (LongLib.RUN_IN_JVM) {
-      SmallLong small = new SmallLong();
-      small.d = value;
-      LongEmul emul = new LongEmul();
-      emul.small = small;
-      return emul;
-    }
-    return createSmallLongEmul0(value);
-  }
-
-  private static native LongEmul createSmallLongEmul0(double value)/*-{
-    return value;
-  }-*/;
-
-  private static LongEmul createLongEmul(BigLong big) {
-    int a2 = BigLongLibBase.getH(big);
-    if (a2 == 0) {
-      return createSmallLongEmul(
-          BigLongLibBase.getL(big) + BigLongLibBase.getM(big) * BigLongLibBase.TWO_PWR_22_DBL);
-    }
-    if (a2 == BigLongLibBase.MASK_2) {
-      return createSmallLongEmul(BigLongLibBase.getL(big)
-          + BigLongLibBase.getM(big) * BigLongLibBase.TWO_PWR_22_DBL
-          - BigLongLib.TWO_PWR_44_DBL);
-    }
-
-    return createBigLongEmul(big);
-  }
-
-  private static LongEmul createBigLongEmul(BigLong big) {
-    if (LongLib.RUN_IN_JVM) {
-      LongEmul emul = new LongEmul();
-      emul.big = big;
-      return emul;
-    }
-    return createBigLongEmul0(big);
-  }
-
-  private static native LongEmul createBigLongEmul0(BigLong value)/*-{
-    return value;
-  }-*/;
-
-  // VisibleForTesting
-  static LongEmul copy(LongEmul value) {
-    if (isSmallLong(value)) {
-      return createSmallLongEmul(asDouble(value));
-    } else {
-      return createBigLongEmul(BigLongLibBase.create(asBigLong(value)));
-    }
+  /**
+   * Returns whether a double value is in the "safe integer" range, i.e. it can
+   * be represented exactly as a JavaScript number. Retained for compatibility
+   * with external code that references this method via JSNI.
+   */
+  static boolean isSafeIntegerRange(double value) {
+    return -4398046511104.0 < value && value < 4398046511104.0; // 2^42
   }
 
   /**

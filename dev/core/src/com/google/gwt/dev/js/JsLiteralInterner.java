@@ -18,6 +18,7 @@ package com.google.gwt.dev.js;
 import com.google.gwt.dev.jjs.SourceInfo;
 import com.google.gwt.dev.jjs.ast.JProgram;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBlock;
 import com.google.gwt.dev.js.ast.JsContext;
@@ -360,6 +361,17 @@ public class JsLiteralInterner {
     }
 
     /**
+     * Replace JsBigIntLiteral instances with JsNameRefs.
+     */
+    @Override
+    public boolean visit(JsBigIntLiteral x, JsContext ctx) {
+      if ((whatToIntern & INTERN_BIGINTS) != 0) {
+        maybeInternLiteral(x, ctx);
+      }
+      return false;
+    }
+
+    /**
      * Replace JsNumberLiteral instances with JsNameRefs.
      */
     @Override
@@ -447,8 +459,9 @@ public class JsLiteralInterner {
   public static final int INTERN_OBJECT_LITERALS = 0x04;
   public static final int INTERN_REGEXES = 0x08;
   public static final int INTERN_STRINGS = 0x10;
+  public static final int INTERN_BIGINTS = 0x20;
   public static final int INTERN_ALL = INTERN_ARRAY_LITERALS | INTERN_NUMBERS |
-      INTERN_OBJECT_LITERALS | INTERN_REGEXES | INTERN_STRINGS;
+      INTERN_OBJECT_LITERALS | INTERN_REGEXES | INTERN_STRINGS | INTERN_BIGINTS;
 
   private static final String PREFIX = "$intern_";
 

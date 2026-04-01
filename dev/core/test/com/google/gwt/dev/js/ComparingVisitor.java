@@ -18,6 +18,7 @@ package com.google.gwt.dev.js;
 import com.google.gwt.dev.js.FlatteningVisitor.TreeNode;
 import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBlock;
 import com.google.gwt.dev.js.ast.JsBooleanLiteral;
@@ -269,6 +270,13 @@ public class ComparingVisitor extends JsVisitor {
   @Override
   public boolean visit(JsNullLiteral x, JsContext ctx) {
     Assert.assertTrue(other instanceof JsNullLiteral);
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsBigIntLiteral x, JsContext ctx) {
+    Assert.assertTrue(other instanceof JsBigIntLiteral);
+    Assert.assertEquals(((JsBigIntLiteral) other).getValue(), x.getValue());
     return false;
   }
 

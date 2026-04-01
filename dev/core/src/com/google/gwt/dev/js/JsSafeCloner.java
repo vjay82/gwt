@@ -20,6 +20,7 @@ import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
 import com.google.gwt.dev.js.ast.JsArrowFunction;
 import com.google.gwt.dev.js.ast.JsAwait;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBooleanLiteral;
 import com.google.gwt.dev.js.ast.JsConditional;
@@ -190,6 +191,11 @@ public final class JsSafeCloner {
       JsNew toReturn = new JsNew(x.getSourceInfo(), stack.pop());
       toReturn.getArguments().addAll(arguments);
       stack.push(toReturn);
+    }
+
+    @Override
+    public void endVisit(JsBigIntLiteral x, JsContext ctx) {
+      stack.push(x);
     }
 
     @Override

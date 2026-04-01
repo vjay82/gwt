@@ -135,6 +135,9 @@ public class JsVisitor {
   public void endVisit(JsAwait x, JsContext ctx) {
   }
 
+  public void endVisit(JsBigIntLiteral x, JsContext ctx) {
+  }
+
   public void endVisit(JsBinaryOperation x, JsContext ctx) {
   }
 
@@ -310,6 +313,10 @@ public class JsVisitor {
   }
 
   public boolean visit(JsAwait x, JsContext ctx) {
+    return true;
+  }
+
+  public boolean visit(JsBigIntLiteral x, JsContext ctx) {
     return true;
   }
 

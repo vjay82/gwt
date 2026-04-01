@@ -23,6 +23,7 @@ import com.google.gwt.dev.js.ast.JsArrayAccess;
 import com.google.gwt.dev.js.ast.JsArrayLiteral;
 import com.google.gwt.dev.js.ast.JsArrowFunction;
 import com.google.gwt.dev.js.ast.JsAwait;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBinaryOperation;
 import com.google.gwt.dev.js.ast.JsBinaryOperator;
 import com.google.gwt.dev.js.ast.JsBlock;
@@ -1067,6 +1068,13 @@ public class JsToStringGenerationVisitor extends JsVisitor {
   @Override
   public boolean visit(JsNullLiteral x, JsContext ctx) {
     _null();
+    return false;
+  }
+
+  @Override
+  public boolean visit(JsBigIntLiteral x, JsContext ctx) {
+    p.print(Long.toString(x.getValue()));
+    p.print('n');
     return false;
   }
 

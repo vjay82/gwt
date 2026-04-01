@@ -35,6 +35,11 @@ public class JsSuperVisitor extends JsVisitor {
   }
 
   @Override
+  public void endVisit(JsBigIntLiteral x, JsContext ctx) {
+    endVisit((JsValueLiteral) x, ctx);
+  }
+
+  @Override
   public void endVisit(JsBinaryOperation x, JsContext ctx) {
     endVisit((JsExpression) x, ctx);
   }
@@ -342,6 +347,11 @@ public class JsSuperVisitor extends JsVisitor {
   @Override
   public boolean visit(JsArrayLiteral x, JsContext ctx) {
     return visit((JsLiteral) x, ctx);
+  }
+
+  @Override
+  public boolean visit(JsBigIntLiteral x, JsContext ctx) {
+    return visit((JsValueLiteral) x, ctx);
   }
 
   @Override

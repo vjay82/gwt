@@ -54,15 +54,13 @@ import com.google.gwt.dev.jjs.ast.JStringLiteral;
 import com.google.gwt.dev.jjs.ast.JThisRef;
 import com.google.gwt.dev.jjs.ast.JType;
 import com.google.gwt.dev.jjs.ast.js.JMultiExpression;
+import com.google.gwt.dev.js.ast.JsBigIntLiteral;
 import com.google.gwt.dev.js.ast.JsBooleanLiteral;
 import com.google.gwt.dev.js.ast.JsExpression;
 import com.google.gwt.dev.js.ast.JsLiteral;
-import com.google.gwt.dev.js.ast.JsNameRef;
 import com.google.gwt.dev.js.ast.JsNullLiteral;
 import com.google.gwt.dev.js.ast.JsNumberLiteral;
-import com.google.gwt.dev.js.ast.JsObjectLiteral;
 import com.google.gwt.dev.js.ast.JsStringLiteral;
-import com.google.gwt.lang.LongLib;
 import com.google.gwt.thirdparty.guava.common.base.Function;
 import com.google.gwt.thirdparty.guava.common.base.Joiner;
 import com.google.gwt.thirdparty.guava.common.base.Predicate;
@@ -497,19 +495,7 @@ public class JjsUtils {
     LONG_LITERAL_TRANSLATOR() {
       @Override
       JsLiteral translate(JExpression literal) {
-        SourceInfo sourceInfo = literal.getSourceInfo();
-        long[] values = LongLib.getAsLongArray(((JLongLiteral) literal).getValue());
-        if (values.length == 1) {
-          return new JsNumberLiteral(literal.getSourceInfo(), ((JLongLiteral) literal).getValue());
-        }
-        JsObjectLiteral.Builder objectLiteralBuilder = JsObjectLiteral.builder(sourceInfo)
-            .setInternable();
-
-        assert values.length == longComponentNames.length;
-        for (int i = 0; i < longComponentNames.length; i++) {
-          addPropertyToObject(sourceInfo, longComponentNames[i], values[i], objectLiteralBuilder);
-        }
-        return objectLiteralBuilder.build();
+        return new JsBigIntLiteral(literal.getSourceInfo(), ((JLongLiteral) literal).getValue());
       }
     },
     STRING_LITERAL_TRANSLATOR() {
@@ -525,15 +511,7 @@ public class JjsUtils {
       }
     };
 
-    private static String[] longComponentNames = { "l", "m", "h" };
-
     abstract JsLiteral translate(JExpression literal);
-  }
-
-  private static void addPropertyToObject(SourceInfo sourceInfo, String propertyName,
-      long propertyValue, JsObjectLiteral.Builder objectLiteralBuilder) {
-    JsExpression value = new JsNumberLiteral(sourceInfo, propertyValue);
-    objectLiteralBuilder.add(new JsNameRef(sourceInfo, propertyName), value);
   }
 
   private static JMethod createEmptyMethodFromExample(
