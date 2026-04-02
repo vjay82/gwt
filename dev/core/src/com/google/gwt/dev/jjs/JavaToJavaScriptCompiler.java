@@ -432,10 +432,9 @@ public final class JavaToJavaScriptCompiler {
         // TODO(stalcup): move to normalization
         EvalFunctionsAtTopScope.exec(jsProgram, jjsmap);
 
-        // Hoist clinit calls to fragment initialization scope, eliminating per-access dispatch.
-        if (options.getOptimizationLevel() > OptionOptimize.OPTIMIZE_LEVEL_DRAFT) {
-          ClinitHoister.exec(jsProgram);
-        }
+        // Clinit hoisting: DRAFT mode records runtime init order, production mode inlines from env var.
+        ClinitHoister.exec(jsProgram,
+            options.getOptimizationLevel() == OptionOptimize.OPTIMIZE_LEVEL_DRAFT);
 
         // (7) Optimize the JS AST.
         final Set<JsNode> inlinableJsFunctions = jjsMapAndInlineableFunctions.getRight();
