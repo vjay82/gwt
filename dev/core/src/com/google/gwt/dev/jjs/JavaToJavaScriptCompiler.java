@@ -130,6 +130,7 @@ import com.google.gwt.dev.jjs.impl.codesplitter.MultipleDependencyGraphRecorder;
 import com.google.gwt.dev.jjs.impl.codesplitter.ReplaceRunAsyncs;
 import com.google.gwt.dev.jjs.impl.gflow.DataflowOptimizer;
 import com.google.gwt.dev.js.BaselineCoverageGatherer;
+import com.google.gwt.dev.js.ClinitHoister;
 import com.google.gwt.dev.js.CoverageInstrumentor;
 import com.google.gwt.dev.js.DuplicateClinitRemover;
 import com.google.gwt.dev.js.EvalFunctionsAtTopScope;
@@ -430,6 +431,11 @@ public final class JavaToJavaScriptCompiler {
 
         // TODO(stalcup): move to normalization
         EvalFunctionsAtTopScope.exec(jsProgram, jjsmap);
+
+        // Hoist clinit calls to fragment initialization scope, eliminating per-access dispatch.
+        if (options.getOptimizationLevel() > OptionOptimize.OPTIMIZE_LEVEL_DRAFT) {
+          ClinitHoister.exec(jsProgram);
+        }
 
         // (7) Optimize the JS AST.
         final Set<JsNode> inlinableJsFunctions = jjsMapAndInlineableFunctions.getRight();

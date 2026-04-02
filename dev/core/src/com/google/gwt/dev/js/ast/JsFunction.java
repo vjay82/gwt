@@ -151,6 +151,11 @@ public final class JsFunction extends JsLiteral implements HasName {
     this.isClinit = true;
   }
 
+  public void unmarkAsClinit() {
+    this.isClinit = false;
+    this.superClinit = null;
+  }
+
   public boolean isAsync() {
     return isAsync;
   }
