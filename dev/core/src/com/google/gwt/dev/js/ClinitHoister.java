@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -27,13 +27,11 @@ import com.google.gwt.dev.js.ast.JsEmpty;
 import com.google.gwt.dev.js.ast.JsExprStmt;
 import com.google.gwt.dev.js.ast.JsExpression;
 import com.google.gwt.dev.js.ast.JsFunction;
-import com.google.gwt.dev.js.ast.JsIf;
 import com.google.gwt.dev.js.ast.JsInvocation;
 import com.google.gwt.dev.js.ast.JsModVisitor;
 import com.google.gwt.dev.js.ast.JsName;
 import com.google.gwt.dev.js.ast.JsNameRef;
 import com.google.gwt.dev.js.ast.JsNullLiteral;
-import com.google.gwt.dev.js.ast.JsNumberLiteral;
 import com.google.gwt.dev.js.ast.JsProgram;
 import com.google.gwt.dev.js.ast.JsStatement;
 import com.google.gwt.dev.js.ast.JsStringLiteral;
@@ -130,36 +128,32 @@ public class ClinitHoister {
    *
    * <p>Generated JS (conceptually):
    * <pre>
-   *   var __gwtClinitOrder = [];
-   *   // ... in each $clinit body, after self-replace:
-   *   __gwtClinitOrder.push('com_example_Foo_$clinit__V');
-   *   // ... at end of fragment 0:
-   *   setInterval(function() {
-   *     if (__gwtClinitOrder.length !== __gwtClinitOrder.__last) {
-   *       __gwtClinitOrder.__last = __gwtClinitOrder.length;
-   *       console.log('[GWT clinit order] ' + __gwtClinitOrder.join(','));
-   *     }
-   *   }, 60000);
+   *   var GWT_CLINIT_ORDER = [];
+   *   // ... at end of each $clinit body:
+   *   GWT_CLINIT_ORDER.push('com_example_Foo');
+   *   // Access from browser console: console.log(GWT_CLINIT_ORDER)
    * </pre>
+   *
+   * <p>The recorded order has all {@code java_lang_*} entries sorted to the front
+   * (preserving their relative order), so production hoisting initializes JRE core
+   * classes first.
    */
   private int execDraftRecording() {
     SourceInfo si = SourceOrigin.UNKNOWN;
     int totalMods = 0;
 
-    // Declare: var __gwtClinitOrder = [];
-    JsName orderName = jsProgram.getScope().declareName("__gwtClinitOrder");
+    // Declare: var GWT_CLINIT_ORDER = [];
+    JsName orderName = jsProgram.getScope().declareName("GWT_CLINIT_ORDER");
     JsVars.JsVar orderVar = new JsVars.JsVar(si, orderName);
     orderVar.setInitExpr(new JsArrayLiteral(si));
     JsVars vars = new JsVars(si, orderVar);
 
     JsBlock fragment0 = jsProgram.getFragmentBlock(0);
-    // Insert var declaration at position 0, then timer at position 1.
-    // Placing the timer early ensures it fires even if a JS error occurs later during init.
     fragment0.getStatements().add(0, vars);
-    fragment0.getStatements().add(1, buildTimerStatement(si, orderName));
-    totalMods += 2;
+    totalMods++;
 
-    // For each fragment, inject recording call in each clinit body.
+    // For each fragment, inject recording call at the end of each clinit body.
+    // Placed at end so sub-clinit calls execute first, giving post-order recording.
     for (int i = 0; i < jsProgram.getFragmentCount(); i++) {
       JsBlock fragmentBlock = jsProgram.getFragmentBlock(i);
       Map<String, JsFunction> clinits = collectAllClinitFunctions(fragmentBlock);
@@ -167,76 +161,18 @@ public class ClinitHoister {
         String ident = entry.getKey();
         JsFunction func = entry.getValue();
 
-        // Build: __gwtClinitOrder.push('ident')
+        // Build: GWT_CLINIT_ORDER.push('ident')
         JsNameRef pushRef = new JsNameRef(si, "push", orderName.makeRef(si));
         JsInvocation pushCall = new JsInvocation(si, pushRef);
         pushCall.getArguments().add(new JsStringLiteral(si, ident));
 
-        // Insert after the self-replace statement (always at index 0), so at index 1.
         List<JsStatement> body = func.getBody().getStatements();
-        int insertIdx = Math.min(1, body.size());
-        body.add(insertIdx, pushCall.makeStmt());
+        body.add(body.size(), pushCall.makeStmt());
         totalMods++;
       }
     }
 
     return totalMods;
-  }
-
-  /**
-   * Builds the setInterval statement that prints the clinit order every 60 seconds when changed:
-   * <pre>
-   * setInterval(function() {
-   *   if (__gwtClinitOrder.length !== __gwtClinitOrder.__last) {
-   *     __gwtClinitOrder.__last = __gwtClinitOrder.length;
-   *     console.log('[GWT clinit order] ' + __gwtClinitOrder.join(','));
-   *   }
-   * }, 60000);
-   * </pre>
-   */
-  private JsStatement buildTimerStatement(SourceInfo si, JsName orderName) {
-    // Create the anonymous timer function.
-    JsFunction timerFn = new JsFunction(si, jsProgram.getScope());
-    JsBlock timerBody = new JsBlock(si);
-    timerFn.setBody(timerBody);
-
-    // Condition: __gwtClinitOrder.length !== __gwtClinitOrder.__last
-    JsExpression lengthRef = new JsNameRef(si, "length", orderName.makeRef(si));
-    JsExpression lastRef = new JsNameRef(si, "__last", orderName.makeRef(si));
-    JsExpression condition = new JsBinaryOperation(si, JsBinaryOperator.REF_NEQ,
-        lengthRef, lastRef);
-
-    // Then block
-    JsBlock thenBlock = new JsBlock(si);
-
-    // Statement 1: __gwtClinitOrder.__last = __gwtClinitOrder.length
-    JsExpression lastAssignRef = new JsNameRef(si, "__last", orderName.makeRef(si));
-    JsExpression lengthValRef = new JsNameRef(si, "length", orderName.makeRef(si));
-    thenBlock.getStatements().add(new JsBinaryOperation(si, JsBinaryOperator.ASG,
-        lastAssignRef, lengthValRef).makeStmt());
-
-    // Statement 2: console.log('[GWT clinit order] ' + __gwtClinitOrder.join(','))
-    JsNameRef joinRef = new JsNameRef(si, "join", orderName.makeRef(si));
-    JsInvocation joinCall = new JsInvocation(si, joinRef);
-    joinCall.getArguments().add(new JsStringLiteral(si, ","));
-
-    JsExpression message = new JsBinaryOperation(si, JsBinaryOperator.ADD,
-        new JsStringLiteral(si, "[GWT clinit order] "), joinCall);
-
-    JsNameRef logRef = new JsNameRef(si, "log", new JsNameRef(si, "console"));
-    JsInvocation logCall = new JsInvocation(si, logRef);
-    logCall.getArguments().add(message);
-    thenBlock.getStatements().add(logCall.makeStmt());
-
-    // if (...) { ... }
-    timerBody.getStatements().add(new JsIf(si, condition, thenBlock, null));
-
-    // setInterval(timerFn, 60000)
-    JsInvocation setIntervalCall = new JsInvocation(si, new JsNameRef(si, "setInterval"));
-    setIntervalCall.getArguments().add(timerFn);
-    setIntervalCall.getArguments().add(new JsNumberLiteral(si, 60000));
-
-    return setIntervalCall.makeStmt();
   }
 
   // ===========================================================================
@@ -245,7 +181,8 @@ public class ClinitHoister {
 
   /**
    * Reads the comma-separated clinit identifier list and inlines matching clinits at fragment
-   * initialization scope. The order from the list is the runtime-proven initialization order.
+   * initialization scope. {@code java_lang_*} entries are sorted to the front (preserving
+   * relative order) so JRE core classes are hoisted before everything else.
    */
   private int execProductionHoisting(String clinitOrder) {
     // Parse the ordered list of clinit idents.
@@ -259,6 +196,16 @@ public class ClinitHoister {
     if (orderedIdents.isEmpty()) {
       return 0;
     }
+
+    // Sort java_lang entries to front (stable sort preserves relative order within each group).
+    orderedIdents.sort((a, b) -> {
+      boolean aJL = a.startsWith("java_lang_");
+      boolean bJL = b.startsWith("java_lang_");
+      if (aJL == bJL) {
+        return 0;
+      }
+      return aJL ? -1 : 1;
+    });
 
     int totalMods = 0;
 
