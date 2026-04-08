@@ -197,16 +197,6 @@ public class ClinitHoister {
       return 0;
     }
 
-    // Sort java_lang entries to front (stable sort preserves relative order within each group).
-    orderedIdents.sort((a, b) -> {
-      boolean aJL = a.startsWith("java_lang_");
-      boolean bJL = b.startsWith("java_lang_");
-      if (aJL == bJL) {
-        return 0;
-      }
-      return aJL ? -1 : 1;
-    });
-
     int totalMods = 0;
 
     for (int i = 0; i < jsProgram.getFragmentCount(); i++) {
