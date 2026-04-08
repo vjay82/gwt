@@ -6,7 +6,7 @@ I gave J2CL more than one shot but I neither love its tooling nor its limitation
 
 Currently based on GWT 2.13 (with most assigned PRs for 2.14 which did not break our test pipeline).
 
-Also implemented a <add-linker name="main_window" /> which installs the script in the main window (not iframe) while still supporting async fragment loading. No more headaches with native libraries ($wnd vs window).
+Also implemented a `<add-linker name="main_window" />` which installs the script in the main window (not iframe) while still supporting async fragment loading. No more headaches with native libraries ($wnd vs window).
 
 
 ## GWT
