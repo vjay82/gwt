@@ -50,11 +50,11 @@ import java.util.Set;
  *
  * <h3>DRAFT mode (recording)</h3>
  * <p>When the compiler runs in DRAFT optimization level, this pass instruments every
- * {@code $clinit} function to record when it is first called into a global ordered list. A 60-second
- * timer prints the list to {@code console.log} whenever it changes. The output is a comma-separated
- * list of clinit identifiers that reflects the actual runtime initialization order:
+ * {@code $clinit} function to record when it is first called into a global ordered list.
+ * The output is a comma-separated list of clinit identifiers that reflects the actual
+ * runtime initialization order:
  * <pre>
- *   [GWT clinit order] java_util_HashMap_$clinit__V,java_util_Collections_$clinit__V,...
+ *   [GWT clinit order] java_util_HashMap,java_util_Collections,...
  * </pre>
  *
  * <h3>Production mode (inlining)</h3>
@@ -64,12 +64,19 @@ import java.util.Set;
  * <ol>
  *   <li>Inlines each listed clinit's body statements at fragment initialization scope (in the
  *       order specified by the list --- which reflects the runtime dependency order).</li>
- *   <li>Strips all per-access invocations of those clinits from the entire fragment.</li>
+ *   <li>Strips per-access invocations of those clinits from the fragment, but only from
+ *       top-level code and non-clinit functions. Non-hoisted clinit functions are left
+ *       untouched so their lazy dependency calls remain intact.</li>
  *   <li>Guts the original clinit functions and unmarks them so
  *       {@link JsUnusedFunctionRemover} can clean them up.</li>
  * </ol>
  *
  * <p>Clinits NOT in the list retain their original self-replacing behavior unchanged.
+ * Their bodies are never modified, so transitive dependencies through non-hoisted
+ * intermediaries continue to work correctly.
+ *
+ * <p>Lambda-generated inner class clinits are excluded from recording and hoisting because
+ * their names are unstable between DRAFT and production compilations.
  *
  * <p>For code-split applications, each fragment is processed independently --- only clinits
  * declared in a given fragment are hoisted there.
@@ -85,6 +92,9 @@ public class ClinitHoister {
 
   /** Suffix stripped from clinit idents to produce shorter, more readable names. */
   private static final String CLINIT_SUFFIX = "_$clinit__V";
+
+  /** Substring present in lambda-generated inner class names. */
+  private static final String LAMBDA_MARKER = "$lambda$";
 
   /**
    * Executes clinit hoisting.
@@ -123,20 +133,21 @@ public class ClinitHoister {
   // ===========================================================================
 
   /**
-   * Instruments all clinit functions to record their first-call order into a global array,
-   * and installs a 60-second timer that prints the ordered list when it changes.
+   * Instruments all clinit functions to record their first-call order into a global array.
+   * After the application has loaded, access the recorded order from the browser console:
+   * {@code console.log(GWT_CLINIT_ORDER.join(','))}
    *
    * <p>Generated JS (conceptually):
    * <pre>
    *   var GWT_CLINIT_ORDER = [];
    *   // ... at end of each $clinit body:
    *   GWT_CLINIT_ORDER.push('com_example_Foo');
-   *   // Access from browser console: console.log(GWT_CLINIT_ORDER)
    * </pre>
    *
-   * <p>The recorded order has all {@code java_lang_*} entries sorted to the front
-   * (preserving their relative order), so production hoisting initializes JRE core
-   * classes first.
+   * <p>The recording appends each clinit identifier at the end of its body (post-order),
+   * so dependencies are naturally recorded before their dependents. Production mode
+   * recomputes the exact order from the production dependency graph; the recording
+   * only determines <em>which</em> clinits to hoist.
    */
   private int execDraftRecording() {
     SourceInfo si = SourceOrigin.UNKNOWN;
@@ -181,8 +192,7 @@ public class ClinitHoister {
 
   /**
    * Reads the comma-separated clinit identifier list and inlines matching clinits at fragment
-   * initialization scope. {@code java_lang_*} entries are sorted to the front (preserving
-   * relative order) so JRE core classes are hoisted before everything else.
+   * initialization scope.
    */
   private int execProductionHoisting(String clinitOrder) {
     // Parse the ordered list of clinit idents.
@@ -234,8 +244,9 @@ public class ClinitHoister {
         }
       }
 
-      // Phase 2: Strip ALL per-access calls to these clinits from the entire fragment.
-      // Must run before Phase 3 (unmark) because isExecuteOnce() checks the clinit flag.
+      // Phase 2: Strip per-access calls to hoisted clinits, but ONLY from top-level
+      // code and non-clinit functions. Non-hoisted clinit functions are skipped so
+      // their lazy dependency calls remain intact.
       AllClinitCallRemover remover = new AllClinitCallRemover(hoistSet);
       remover.accept(fragmentBlock);
       totalMods += remover.getNumMods();
@@ -266,7 +277,10 @@ public class ClinitHoister {
       @Override
       public boolean visit(JsFunction x, JsContext ctx) {
         if (x.isClinit() && x.getName() != null) {
-          result.put(stripClinitSuffix(x.getName().getIdent()), x);
+          String ident = stripClinitSuffix(x.getName().getIdent());
+          if (!isLambdaClinit(ident)) {
+            result.put(ident, x);
+          }
         }
         return false; // don't descend into nested function bodies
       }
@@ -283,6 +297,15 @@ public class ClinitHoister {
       return ident.substring(0, ident.length() - CLINIT_SUFFIX.length());
     }
     return ident;
+  }
+
+  /**
+   * Returns true if the ident belongs to a lambda-generated inner class.
+   * Lambda class names are unstable between DRAFT and production compilations
+   * and their clinits are trivial, so they should not be recorded or hoisted.
+   */
+  private static boolean isLambdaClinit(String ident) {
+    return ident.contains(LAMBDA_MARKER);
   }
 
   /**
@@ -318,17 +341,34 @@ public class ClinitHoister {
   }
 
   // ---------------------------------------------------------------------------
-  // Global clinit call removal
+  // Scoped clinit call removal
   // ---------------------------------------------------------------------------
 
   /**
-   * Removes ALL invocations of the specified clinit functions from the entire fragment.
+   * Removes invocations of the specified (hoisted) clinit functions, but only from
+   * top-level fragment code and non-clinit function bodies. Non-hoisted clinit functions
+   * are explicitly skipped so their lazy dependency calls remain intact.
+   *
+   * <p>This is critical for correctness: if a non-hoisted clinit (e.g. IsoFields) depends on
+   * a hoisted clinit (e.g. DateTimeFormat), removing the call from inside IsoFields' body
+   * would cause it to access uninitialized statics when it eventually runs lazily.
    */
   private static class AllClinitCallRemover extends JsModVisitor {
     private final Set<JsFunction> removedClinits;
 
     AllClinitCallRemover(Set<JsFunction> removedClinits) {
       this.removedClinits = removedClinits;
+    }
+
+    @Override
+    public boolean visit(JsFunction x, JsContext ctx) {
+      // Skip non-hoisted clinit function bodies entirely. Their internal clinit calls
+      // must remain so lazy initialization triggers dependencies correctly.
+      if (x.isClinit() && !removedClinits.contains(x)) {
+        return false;
+      }
+      // For hoisted clinits (about to be gutted) and normal functions, descend and remove calls.
+      return true;
     }
 
     @Override
