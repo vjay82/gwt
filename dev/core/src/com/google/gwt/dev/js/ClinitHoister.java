@@ -31,6 +31,7 @@ import com.google.gwt.dev.js.ast.JsInvocation;
 import com.google.gwt.dev.js.ast.JsModVisitor;
 import com.google.gwt.dev.js.ast.JsName;
 import com.google.gwt.dev.js.ast.JsNameRef;
+import com.google.gwt.dev.js.ast.JsNode;
 import com.google.gwt.dev.js.ast.JsNullLiteral;
 import com.google.gwt.dev.js.ast.JsProgram;
 import com.google.gwt.dev.js.ast.JsStatement;
@@ -233,11 +234,29 @@ public class ClinitHoister {
       // Phase 1: Inline clinit bodies at fragment init scope in recorded order.
       int insertionPoint = findInsertionPoint(statements, i);
       for (JsFunction clinit : toHoist) {
+        // Capture the clinit function's own SourceInfo so we can re-stamp
+        // hoisted statements. Hoisted statements end up at fragment
+        // top-level (no enclosing JsFunction), so the snap-to-enclosing-
+        // function safeguard in JsReportGenerationVisitor cannot rescue
+        // statements whose SourceInfo was polluted by upstream JJS passes
+        // (e.g. MethodInliner splicing in helper bodies from other files).
+        // Stamping the clinit's SourceInfo guarantees the hoisted bytes
+        // map back to the clinit's source file.
+        SourceInfo clinitSi = clinit.getSourceInfo();
         // Copy the statement list to avoid issues when clearing later.
         List<JsStatement> bodyStmts = new ArrayList<>(clinit.getBody().getStatements());
         for (JsStatement stmt : bodyStmts) {
           if (isSelfReplaceStatement(stmt, clinit)) {
             continue;
+          }
+          // Re-stamp the top-level SourceInfo with the clinit's own location.
+          // Sub-expressions keep their finer-grained SourceInfo; the
+          // cross-file gate in JsReportGenerationVisitor.surroundsInJavaSource
+          // suppresses sub-ranges whose file disagrees with the parent
+          // (now correctly the clinit file), so polluted inner SourceInfos
+          // can no longer hijack the mapping.
+          if (clinitSi != null) {
+            stmt.replaceSourceInfo(clinitSi);
           }
           statements.add(insertionPoint++, stmt);
           totalMods++;
@@ -319,6 +338,53 @@ public class ClinitHoister {
       return statements.size() - 1;
     }
     return statements.size();
+  }
+
+  /**
+   * Recursively replaces every JsNode's SourceInfo with {@link SourceOrigin#UNKNOWN}.
+   * Used to suppress source-map entries for hoisted clinit code, since the original
+   * source location no longer corresponds to where the code actually executes.
+   */
+  private static void stripSourceInfo(JsNode root) {
+    new JsVisitor() {
+      @Override
+      protected <T extends com.google.gwt.dev.js.ast.JsVisitable> T doAccept(T node) {
+        if (node instanceof JsNode) {
+          ((JsNode) node).replaceSourceInfo(SourceOrigin.UNKNOWN);
+        }
+        return super.doAccept(node);
+      }
+
+      @Override
+      protected <T extends com.google.gwt.dev.js.ast.JsVisitable> void doAcceptList(
+          List<T> collection) {
+        for (T node : collection) {
+          if (node instanceof JsNode) {
+            ((JsNode) node).replaceSourceInfo(SourceOrigin.UNKNOWN);
+          }
+        }
+        super.doAcceptList(collection);
+      }
+
+      @Override
+      protected JsExpression doAcceptLvalue(JsExpression expr) {
+        if (expr != null) {
+          expr.replaceSourceInfo(SourceOrigin.UNKNOWN);
+        }
+        return super.doAcceptLvalue(expr);
+      }
+
+      @Override
+      protected <T extends com.google.gwt.dev.js.ast.JsVisitable> void doAcceptWithInsertRemove(
+          List<T> collection) {
+        for (T node : collection) {
+          if (node instanceof JsNode) {
+            ((JsNode) node).replaceSourceInfo(SourceOrigin.UNKNOWN);
+          }
+        }
+        super.doAcceptWithInsertRemove(collection);
+      }
+    }.accept(root);
   }
 
   /**

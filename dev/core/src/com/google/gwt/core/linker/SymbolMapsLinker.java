@@ -34,6 +34,7 @@ import com.google.gwt.core.ext.linker.Shardable;
 import com.google.gwt.core.ext.linker.SoftPermutation;
 import com.google.gwt.core.ext.linker.SymbolData;
 import com.google.gwt.core.ext.linker.SyntheticArtifact;
+import com.google.gwt.core.ext.linker.Transferable;
 import com.google.gwt.core.ext.linker.impl.StandardLinkerContext;
 import com.google.gwt.dev.cfg.ResourceLoader;
 import com.google.gwt.dev.cfg.ResourceLoaders;
@@ -73,7 +74,15 @@ public class SymbolMapsLinker extends AbstractLinker {
 
   /**
    * Artifact to record insertions or deletions made to Javascript fragments.
+   *
+   * <p>Marked {@link Transferable} so that the per-permutation linker phase
+   * (which records the module prefix via {@link #prefixLines(String)}) can
+   * propagate this information to the final relinking phase, where {@link
+   * SymbolMapsLinker} consumes it to shift source-map mappings by the prefix
+   * size. Without this annotation the artifact is dropped at phase boundary,
+   * leaving every source-map column on JS line 1 wrong by the prefix length.
    */
+  @Transferable
   public static class ScriptFragmentEditsArtifact extends Artifact<ScriptFragmentEditsArtifact> {
 
     /**
@@ -91,15 +100,28 @@ public class SymbolMapsLinker extends AbstractLinker {
 
       Edit op;
       int numLines;
+      int lastLineColumns;
 
       public EditOperation(
           Edit op, int lineNumber, String data) {
         this.op = op;
         this.numLines = countNewLines(data);
+        this.lastLineColumns = countLastLineColumns(data);
       }
 
       public int getNumLines() {
         return numLines;
+      }
+
+      /**
+       * Number of characters after the last newline in the data (or the full
+       * length if there is no newline). Needed because compact-mode prefixes
+       * are typically a single line of ~1000 chars; without applying this
+       * column offset to the source map, every source-map column on the
+       * first JS line is wrong by exactly this amount.
+       */
+      public int getLastLineColumns() {
+        return lastLineColumns;
       }
 
       public Edit getOp() {
@@ -114,6 +136,11 @@ public class SymbolMapsLinker extends AbstractLinker {
           }
         }
         return newLineCount;
+      }
+
+      private int countLastLineColumns(String chunkJs) {
+        int lastNewline = chunkJs.lastIndexOf('\n');
+        return chunkJs.length() - (lastNewline + 1);
       }
     }
 
@@ -148,8 +175,15 @@ public class SymbolMapsLinker extends AbstractLinker {
 
     @Override
     protected int compareToComparableArtifact(SymbolMapsLinker.ScriptFragmentEditsArtifact o) {
-      int result = (strongName + fragment).compareTo(strongName + fragment);
-      return result;
+      // Bug fix: previously this compared (strongName + fragment) against
+      // ITSELF (using the same `this` fields on both sides of compareTo),
+      // making every ScriptFragmentEditsArtifact "equal" to every other.
+      // Because ArtifactSet is a SortedSet keyed off equals/compareTo, that
+      // collapsed all per-permutation prefix-edit records to a single entry,
+      // so SymbolMapsLinker found 0 matches when looking up the editsArtifact
+      // by strongName/fragment, and never applied the prefix column shift to
+      // the source map.
+      return (this.strongName + this.fragment).compareTo(o.strongName + o.fragment);
     }
 
     @Override
@@ -303,7 +337,8 @@ public class SymbolMapsLinker extends AbstractLinker {
           int fragment = se.getFragment();
           ScriptFragmentEditsArtifact editArtifact = null;
           for (ScriptFragmentEditsArtifact mp : artifacts.find(ScriptFragmentEditsArtifact.class)) {
-            if (mp.getStrongName().equals(strongName) && mp.getFragment() == fragment) {
+            if (mp.getStrongName() != null && mp.getStrongName().equals(strongName)
+                && mp.getFragment() == fragment) {
               editArtifact = mp;
               artifacts.remove(editArtifact);
               break;
@@ -324,8 +359,22 @@ public class SymbolMapsLinker extends AbstractLinker {
 
             try {
               int totalPrefixLines = 0;
+              int firstLineColumnOffset = 0;
+              boolean stillOnFirstLine = true;
               for (ScriptFragmentEditsArtifact.EditOperation op : editArtifact.editOperations) {
                 if (op.getOp() == ScriptFragmentEditsArtifact.Edit.PREFIX) {
+                  if (stillOnFirstLine) {
+                    // Anything on the first line of the prefix shifts source-map
+                    // columns on what was originally JS line 1.
+                    firstLineColumnOffset += op.getLastLineColumns();
+                  }
+                  if (op.getNumLines() > 0) {
+                    // Once we've seen a newline, only the trailing fragment of
+                    // the LAST prefix matters for the column offset, but we'll
+                    // reset on each subsequent prefix that contains newlines.
+                    firstLineColumnOffset = op.getLastLineColumns();
+                    stillOnFirstLine = false;
+                  }
                   totalPrefixLines += op.getNumLines();
                 }
               }
@@ -333,10 +382,10 @@ public class SymbolMapsLinker extends AbstractLinker {
               // TODO(cromwellian): apply insert and remove edits
               if (stdContext.getModule().shouldEmbedSourceMapContents()) {
                 embedSourcesInSourceMaps(logger, stdContext, artifacts, sourceMapGenerator,
-                    totalPrefixLines, sourceMapString, partialPath);
+                    totalPrefixLines, firstLineColumnOffset, sourceMapString, partialPath);
               } else {
-                sourceMapGenerator.mergeMapSection(totalPrefixLines, 0, sourceMapString,
-                    (extKey, oldVal, newVal) -> newVal);
+                sourceMapGenerator.mergeMapSection(totalPrefixLines, firstLineColumnOffset,
+                    sourceMapString, (extKey, oldVal, newVal) -> newVal);
               }
 
               StringWriter stringWriter = new StringWriter();
@@ -357,10 +406,11 @@ public class SymbolMapsLinker extends AbstractLinker {
   private static void embedSourcesInSourceMaps(TreeLogger logger, StandardLinkerContext context,
                                                ArtifactSet artifacts,
                                                SourceMapGeneratorV3 sourceMapGenerator,
-                                               int totalPrefixLines, String sourceMapString,
+                                               int totalPrefixLines, int firstLineColumnOffset,
+                                               String sourceMapString,
                                                String partialPath)
       throws SourceMapParseException {
-    sourceMapGenerator.setStartingPosition(totalPrefixLines, 0);
+    sourceMapGenerator.setStartingPosition(totalPrefixLines, firstLineColumnOffset);
     SourceMapConsumerV3 section = new SourceMapConsumerV3();
     section.parse(sourceMapString);
     section.visitMappings(sourceMapGenerator::addMapping);

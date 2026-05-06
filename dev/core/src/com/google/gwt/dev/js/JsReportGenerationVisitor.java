@@ -23,6 +23,7 @@ import com.google.gwt.dev.jjs.impl.JavaToJavaScriptMap;
 import com.google.gwt.dev.js.ast.JsBlock;
 import com.google.gwt.dev.js.ast.JsDoWhile;
 import com.google.gwt.dev.js.ast.JsExpression;
+import com.google.gwt.dev.js.ast.JsFunction;
 import com.google.gwt.dev.js.ast.JsName;
 import com.google.gwt.dev.js.ast.JsNameRef;
 import com.google.gwt.dev.js.ast.JsNode;
@@ -54,6 +55,14 @@ public class JsReportGenerationVisitor extends
    * The ancestor nodes whose Range and SourceInfo will be added to the sourcemap.
    */
   private List<JsNode> parentStack = Lists.newArrayList();
+
+  /**
+   * Stack of all enclosing JsFunctions, regardless of whether they were added
+   * to {@link #parentStack}. Used to attribute statement ranges to the
+   * enclosing function's source file when statements were spliced in from
+   * elsewhere by JJS optimizations.
+   */
+  private List<JsFunction> functionStack = Lists.newArrayList();
 
   public JsReportGenerationVisitor(TextOutput out, JavaToJavaScriptMap map,
       boolean needSourcemapNames,
@@ -91,7 +100,26 @@ public class JsReportGenerationVisitor extends
         // Instrument the expression if it was inlined in Java.
         SourceInfo info = ((JsNode) node).getSourceInfo();
         if (!surroundsInJavaSource(parent.getSourceInfo(), info)) {
-          willReportRange = true;
+          // Only emit a sub-range when the child stays in the SAME source
+          // file as the parent. Cross-file mismatches almost always come
+          // from shared/interned AST nodes (class literals, string literals,
+          // JsLiteralInterner-generated NameRefs, JCastMap copies, etc.)
+          // whose SourceInfo reflects only the FIRST creation site, not
+          // where they are actually used. Emitting those wrong sub-ranges
+          // overrides the parent's correct mapping for the bytes they
+          // cover (V3 source-map segment-extension semantics), so the
+          // resulting source map points exception throws and other
+          // expressions at completely unrelated Java files.
+          //
+          // Same-file inlines are kept (e.g. inlined sub-expressions from
+          // helpers in the same compilation unit), which preserves
+          // fine-grained line attribution within a file.
+          SourceInfo parentInfo = parent.getSourceInfo();
+          if (info != null && parentInfo != null
+              && info.getFileName() != null && parentInfo.getFileName() != null
+              && info.getFileName().equals(parentInfo.getFileName())) {
+            willReportRange = true;
+          }
         }
       }
     }
@@ -104,16 +132,47 @@ public class JsReportGenerationVisitor extends
     if (willReportRange) {
       parentStack.add((JsNode) node);
     }
+    boolean pushedFunction = false;
+    if (node instanceof JsFunction) {
+      functionStack.add((JsFunction) node);
+      pushedFunction = true;
+    }
 
     // Write some JavaScript (changing the position).
     T toReturn = super.generateAndBill(node, nameToBillTo);
 
+    if (pushedFunction) {
+      functionStack.remove(functionStack.size() - 1);
+    }
     if (!willReportRange) {
       return toReturn;
     }
     parentStack.remove(parentStack.size() - 1);
 
     SourceInfo info = ((JsNode) node).getSourceInfo();
+
+    // File-correctness fallback: when emitting a top-level JsStatement, if its
+    // SourceInfo's file doesn't match the enclosing JsFunction's SourceInfo,
+    // attribute the range to the function instead. JJS optimizations
+    // (especially MethodInliner) routinely splice statements from helper
+    // methods into the body of an unrelated outer method while keeping the
+    // helper's SourceInfo. Emitting that helper SourceInfo here makes
+    // browser stack traces point at the wrong Java file. Snapping to the
+    // enclosing function's SourceInfo guarantees that bytes inside e.g.
+    // WTK.<clinit> always map to WTK.java, even when the actual statement
+    // came from inlining a TableFilter helper.
+    if (node instanceof JsStatement) {
+      JsFunction enclosing = findEnclosingFunction();
+      if (enclosing != null) {
+        SourceInfo fnInfo = enclosing.getSourceInfo();
+        if (fnInfo != null && fnInfo.getFileName() != null
+            && info != null && info.getFileName() != null
+            && !info.getFileName().equals(fnInfo.getFileName())) {
+          info = fnInfo;
+        }
+      }
+    }
+
     Range range = new Range(beforePosition, out.getPosition(), beforeLine, beforeColumn,
         out.getLine(), out.getColumn(), info);
 
@@ -139,6 +198,17 @@ public class JsReportGenerationVisitor extends
     ranges.add(range);
     previousRange = range;
     return toReturn;
+  }
+
+  /**
+   * Returns the innermost JsFunction currently on the function stack, or null
+   * if we are emitting top-level (non-function-enclosed) code.
+   */
+  private JsFunction findEnclosingFunction() {
+    if (functionStack.isEmpty()) {
+      return null;
+    }
+    return functionStack.get(functionStack.size() - 1);
   }
 
   /**

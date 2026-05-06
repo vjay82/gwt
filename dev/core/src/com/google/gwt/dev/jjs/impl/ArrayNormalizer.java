@@ -124,7 +124,18 @@ public class ArrayNormalizer {
         return new JCastMap(sourceInfo, program.getTypeJavaLangObject(),
             Collections.<JReferenceType>emptyList());
       }
-      return castableTypeMap;
+      // Re-stamp the shared cast map with the call-site SourceInfo so that the
+      // resulting JsObjectLiteral (and the JsNameRef that the literal interner
+      // collapses it to) carries the location of THIS array creation rather
+      // than the location where the cast map was originally synthesized.
+      // Without this, every reference to the same cast map across the program
+      // would map to a single, unrelated source line, causing source-map
+      // entries near `new T[]{...}` (notably exception throws) to point at
+      // arbitrary other Java files.
+      JCastMap copy = new JCastMap(sourceInfo, program.getTypeJavaLangObject(),
+          Collections.<JReferenceType>emptyList());
+      copy.getCanCastToTypes().addAll(castableTypeMap.getCanCastToTypes());
+      return copy;
     }
 
     private JExpression initializeUnidimensionalArray(JNewArray x, JArrayType arrayType) {

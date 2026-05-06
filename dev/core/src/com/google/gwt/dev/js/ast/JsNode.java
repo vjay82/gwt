@@ -46,6 +46,16 @@ public abstract class JsNode implements JsVisitable, HasSourceInfo, Serializable
   }
 
   /**
+   * Replaces the source info, including its origin. Use only for transformations
+   * that physically relocate code into a context where the original origin is no
+   * longer meaningful (e.g. clinit hoisting), so that source-map entries do not
+   * point at unrelated source files.
+   */
+  public void replaceSourceInfo(SourceInfo info) {
+    this.sourceInfo = info;
+  }
+
+  /**
    * Returns a source code representation of the node using short identifiers.
    */
   public final String toSource() {

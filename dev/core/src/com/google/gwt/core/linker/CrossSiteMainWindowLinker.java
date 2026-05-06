@@ -20,6 +20,7 @@ import com.google.gwt.core.ext.LinkerContext;
 import com.google.gwt.core.ext.TreeLogger;
 import com.google.gwt.core.ext.UnableToCompleteException;
 import com.google.gwt.core.ext.linker.ArtifactSet;
+import com.google.gwt.core.ext.linker.Shardable;
 
 /**
  * A linker that installs compiled JavaScript directly into the main browser window
@@ -35,6 +36,7 @@ import com.google.gwt.core.ext.linker.ArtifactSet;
  *   &lt;add-linker name="main_window" /&gt;
  * </pre>
  */
+@Shardable
 public class CrossSiteMainWindowLinker extends CrossSiteIframeLinker {
 
   @Override

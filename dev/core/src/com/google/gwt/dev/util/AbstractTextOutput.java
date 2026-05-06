@@ -101,7 +101,12 @@ public abstract class AbstractTextOutput implements TextOutput {
       out.print(c);
     }
     position++;
-    column++;
+    if (c == '\n') {
+      line++;
+      column = 0;
+    } else {
+      column++;
+    }
     justNewlined = false;
   }
 
@@ -129,7 +134,12 @@ public abstract class AbstractTextOutput implements TextOutput {
         out.print(c);
       }
       position += 1;
-      column++;
+      if (c == '\n') {
+        line++;
+        column = 0;
+      } else {
+        column++;
+      }
     }
   }
 
@@ -170,7 +180,18 @@ public abstract class AbstractTextOutput implements TextOutput {
 
   private void printAndCount(char[] chars) {
     position += chars.length;
-    column += chars.length;
+    int lastNewline = -1;
+    for (int i = 0; i < chars.length; i++) {
+      if (chars[i] == '\n') {
+        line++;
+        lastNewline = i;
+      }
+    }
+    if (lastNewline >= 0) {
+      column = chars.length - lastNewline - 1;
+    } else {
+      column += chars.length;
+    }
     if (buf != null) {
       buf.append(chars);
     } else {
@@ -179,8 +200,20 @@ public abstract class AbstractTextOutput implements TextOutput {
   }
 
   private void printAndCount(String str) {
-    position += str.length();
-    column += str.length();
+    int len = str.length();
+    position += len;
+    int lastNewline = -1;
+    for (int i = 0; i < len; i++) {
+      if (str.charAt(i) == '\n') {
+        line++;
+        lastNewline = i;
+      }
+    }
+    if (lastNewline >= 0) {
+      column = len - lastNewline - 1;
+    } else {
+      column += len;
+    }
     if (buf != null) {
       buf.append(str);
     } else {
