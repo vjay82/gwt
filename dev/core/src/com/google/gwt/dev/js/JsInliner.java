@@ -1849,8 +1849,7 @@ public class JsInliner {
   }
 
   /**
-   * This is used in combination with {@link #hoistedExpression(JsStatement)} to
-   * indicate if a given statement would terminate the list of hoisted
+   * This is used to indicate if a given statement would terminate the list of hoisted
    * expressions.
    */
   private static boolean isReturnStatement(JsStatement statement) {

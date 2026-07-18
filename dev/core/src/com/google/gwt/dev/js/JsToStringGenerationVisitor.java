@@ -362,8 +362,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     _newlineOpt();
 
     indent();
-    for (Object element : x.getStmts()) {
-      JsStatement stmt = (JsStatement) element;
+    for (JsStatement stmt : x.getStmts()) {
       needSemi = true;
       accept(stmt);
       if (needSemi) {

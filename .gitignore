@@ -9,5 +9,7 @@
 
 # Maven build directories for samples
 samples/**/target/
+
 /.graphify
 /.graphifyignore
+*.log

@@ -67,6 +67,7 @@
 
   <target name="dist" depends="build, doc" description="[action] Make all the distributions">
     <gwt.ant dir="distro-source"/>
+    <antcall target="strip-gwt-dev"/>
   </target>
 
   <target name="dist-dev" depends="buildonly"
@@ -123,11 +124,9 @@
     <gwt.ant dir="build_tools"/>
   </target>
 
-  <target name="build"
-          description="[action] Builds GWT, including samples, but without distro packaging">
+  <target name="build" description="[action] Builds GWT, including samples, but without distro packaging">
+    <antcall target="clean"/>
     <call-subproject subproject="dev" subtarget="build"/>
-	<antcall target="strip-gwt-dev"/>
-	
     <call-subproject subproject="user" subtarget="build"/>
     <call-subproject subproject="codeserver" subtarget="build"/>
     <call-subproject subproject="requestfactory" subtarget="build"/>
