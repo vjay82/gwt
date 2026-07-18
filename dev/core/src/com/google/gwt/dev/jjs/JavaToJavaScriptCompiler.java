@@ -107,6 +107,7 @@ import com.google.gwt.dev.jjs.impl.Pruner;
 import com.google.gwt.dev.jjs.impl.RecordRebinds;
 import com.google.gwt.dev.jjs.impl.RemoveEmptySuperCalls;
 import com.google.gwt.dev.jjs.impl.RemoveSpecializations;
+import com.google.gwt.dev.jjs.impl.RemoveUnnecessaryControlFlow;
 import com.google.gwt.dev.jjs.impl.ReplaceCallsToNativeJavaLangObjectOverrides;
 import com.google.gwt.dev.jjs.impl.ReplaceGetClassOverrides;
 import com.google.gwt.dev.jjs.impl.ResolvePermutationDependentValues;
@@ -1494,9 +1495,10 @@ public final class JavaToJavaScriptCompiler {
 
     // Track which passes made modifications last iteration; skip quiescent passes.
     // Indices: 0=Pruner, 1=Finalizer, 2=MakeCallsStatic, 3=TypeTightener,
-    // 4=MethodCallTightener, 5=MethodCallSpecializer, 6=DeadCodeElimination,
-    // 7=MethodInliner, 8=SameParameterValueOptimizer, 9=EnumOrdinalizer
-    boolean[] passActive = new boolean[10];
+    // 4=MethodCallTightener, 5=MethodCallSpecializer, 6=RemoveUnnecessaryControlFlow,
+    // 7=DeadCodeElimination, 8=MethodInliner, 9=SameParameterValueOptimizer,
+    // 10=EnumOrdinalizer
+    boolean[] passActive = new boolean[11];
     java.util.Arrays.fill(passActive, true); // all active on first pass
 
     while (true) {
@@ -1552,26 +1554,31 @@ public final class JavaToJavaScriptCompiler {
         passActive[5] = passMods > 0;
         anyPassMadeMods |= passMods > 0;
 
-        passMods = passActive[6] ? DeadCodeElimination.exec(jprogram, optimizerCtx) : 0;
+        passMods = passActive[6] ? RemoveUnnecessaryControlFlow.exec(jprogram, optimizerCtx) : 0;
         stats.recordModified(passMods);
         passActive[6] = passMods > 0;
         anyPassMadeMods |= passMods > 0;
 
-        passMods = passActive[7] ? MethodInliner.exec(jprogram, optimizerCtx) : 0;
+        passMods = passActive[7] ? DeadCodeElimination.exec(jprogram, optimizerCtx) : 0;
         stats.recordModified(passMods);
         passActive[7] = passMods > 0;
         anyPassMadeMods |= passMods > 0;
 
+        passMods = passActive[8] ? MethodInliner.exec(jprogram, optimizerCtx) : 0;
+        stats.recordModified(passMods);
+        passActive[8] = passMods > 0;
+        anyPassMadeMods |= passMods > 0;
+
         if (options.shouldInlineLiteralParameters()) {
-          passMods = passActive[8] ? SameParameterValueOptimizer.exec(jprogram, optimizerCtx) : 0;
+          passMods = passActive[9] ? SameParameterValueOptimizer.exec(jprogram, optimizerCtx) : 0;
           stats.recordModified(passMods);
-          passActive[8] = passMods > 0;
+          passActive[9] = passMods > 0;
           anyPassMadeMods |= passMods > 0;
         }
         if (options.shouldOrdinalizeEnums()) {
-          passMods = passActive[9] ? EnumOrdinalizer.exec(jprogram, optimizerCtx) : 0;
+          passMods = passActive[10] ? EnumOrdinalizer.exec(jprogram, optimizerCtx) : 0;
           stats.recordModified(passMods);
-          passActive[9] = passMods > 0;
+          passActive[10] = passMods > 0;
           anyPassMadeMods |= passMods > 0;
         }
 
