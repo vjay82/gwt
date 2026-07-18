@@ -1,4 +1,4 @@
-<project name="GWT" default="dist" basedir=".">
+<project name="GWT" default="buildForMira" basedir=".">
   <property name="gwt.root" location="."/>
   <property name="project.tail" value=""/>
   <import file="${gwt.root}/common.ant.xml"/>
@@ -125,7 +125,6 @@
   </target>
 
   <target name="build" description="[action] Builds GWT, including samples, but without distro packaging">
-    <antcall target="clean"/>
     <call-subproject subproject="dev" subtarget="build"/>
     <call-subproject subproject="user" subtarget="build"/>
     <call-subproject subproject="codeserver" subtarget="build"/>
