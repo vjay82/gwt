@@ -189,6 +189,10 @@ public class RemoveUnnecessaryControlFlow {
        */
       public void updateLastStatement(JMethod containingMethod, JBlock block,
             OptimizerContext ctx) {
+        if (block == null) {
+          // Optional blocks (such as a try's missing finally) are absent, nothing to rewrite.
+          return;
+        }
         List<JStatement> stmts = block.getStatements();
         if (stmts.isEmpty()) {
           return;
@@ -251,7 +255,8 @@ public class RemoveUnnecessaryControlFlow {
        * @param ctx the current context
        */
       public void updateContinues(JMethod containingMethod, JBlock block, OptimizerContext ctx) {
-        if (block.isEmpty()) {
+        if (block == null || block.isEmpty()) {
+          // Optional blocks (such as a try's missing finally) are absent, nothing to rewrite.
           return;
         }
         List<JStatement> stmts = block.getStatements();

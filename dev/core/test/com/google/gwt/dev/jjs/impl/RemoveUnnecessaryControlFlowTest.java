@@ -62,6 +62,13 @@ public class RemoveUnnecessaryControlFlowTest extends OptimizerTestBase {
         .into("try { } catch (Exception e) { } finally { }");
   }
 
+  public void testReturnInTryWithoutFinally() throws UnableToCompleteException {
+    // A try without a finally block has a null finally, which must not cause a failure.
+    optimize("void", "try { foo(); } catch (Exception e) { foo(); }").noChange();
+    optimize("void", "try { return; } catch (Exception e) { return; }")
+        .into("try { } catch (Exception e) { }");
+  }
+
   public void testReturnInLoop() throws UnableToCompleteException {
     // while, with various returns
     optimize("void", "while (condition()) { return; }")
