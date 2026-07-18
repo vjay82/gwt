@@ -126,13 +126,14 @@
   <target name="build"
           description="[action] Builds GWT, including samples, but without distro packaging">
     <call-subproject subproject="dev" subtarget="build"/>
+	<antcall target="strip-gwt-dev"/>
+	
     <call-subproject subproject="user" subtarget="build"/>
     <call-subproject subproject="codeserver" subtarget="build"/>
     <call-subproject subproject="requestfactory" subtarget="build"/>
     <call-subproject subproject="servlet" subtarget="build"/>
     <call-subproject subproject="tools" subtarget="build"/>
     <call-subproject subproject="samples" subtarget="build"/>
-    <antcall target="strip-gwt-dev"/>
   </target>
 
   <target name="checkstyle" description="[action] Does static analysis of GWT source">

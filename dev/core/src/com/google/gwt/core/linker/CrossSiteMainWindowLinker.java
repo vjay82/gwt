@@ -54,6 +54,21 @@ public class CrossSiteMainWindowLinker extends CrossSiteIframeLinker {
     return false;
   }
 
+  /**
+   * Emits each {@code GWT.runAsync} fragment as a plain, self-executing script that ends with its
+   * compiled fragment-loaded call, rather than wrapping the whole fragment body in a
+   * {@code $wnd.<module>.runAsyncCallbackN("...")} string (the default in
+   * {@link CrossSiteIframeLinker}). The string form is only needed by the
+   * {@code ScriptTagLoadingStrategy}; the main-window linker loads fragments with the
+   * {@code XhrLoadingStrategy} (see {@code CrossSiteIframeLinker.gwt.xml}), which installs the
+   * downloaded script directly, so no string-wrapping/eval is required.
+   */
+  @Override
+  protected String wrapDeferredFragment(TreeLogger logger, LinkerContext context, int fragment,
+      String js, ArtifactSet artifacts) {
+    return js;
+  }
+
   @Override
   protected String getModulePrefix(TreeLogger logger, LinkerContext context, String strongName)
       throws UnableToCompleteException {

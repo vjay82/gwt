@@ -45,13 +45,19 @@
   <set-configuration-property name="includeSourceMapUrl" value="false"/>
   <set-configuration-property name="xsiframe.failIfScriptTag" value="TRUE"/> 
 
+  <!--
+    The ScriptTagLoadingStrategy requires each deferred fragment to be wrapped as
+    runAsyncCallbackN("...code..."). The main_window linker instead emits plain, self-executing
+    fragment scripts (see CrossSiteMainWindowLinker.wrapDeferredFragment) and therefore falls back
+    to the XhrLoadingStrategy (the default bound in AsyncFragmentLoader.gwt.xml), which installs the
+    downloaded script directly. Do NOT add main_window here or fragment loading will break.
+  -->
   <replace-with class="com.google.gwt.core.client.impl.ScriptTagLoadingStrategy">
     <when-type-is
       class="com.google.gwt.core.client.impl.AsyncFragmentLoader.LoadingStrategy" />
     <any>
       <when-linker-added name="xsiframe" />
       <when-linker-added name="direct_install" />
-      <when-linker-added name="main_window" />
     </any>
   </replace-with>
 
