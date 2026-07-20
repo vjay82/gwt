@@ -85,7 +85,10 @@ public class CrossSiteMainWindowLinker extends CrossSiteIframeLinker {
         + "  var scripts = $doc.getElementsByTagName('script');\n"
         + "  for (var i = 0; i < scripts.length; i++) {\n"
         + "    var src = scripts[i].src || '';\n"
-        + "    var idx = src.indexOf('__MODULE_NAME__.');\n"
+        // Match the loader's actual filename, not just '<module>.', otherwise a host name that
+        // contains the module name (e.g. https://wallboard.example.com/.../wallboard.nocache.js)
+        // matches inside the host and collapses the base to just the scheme.
+        + "    var idx = src.indexOf('__MODULE_NAME__.nocache.js');\n"
         + "    if (idx >= 0) {\n"
         + "      return src.substring(0, idx);\n"
         + "    }\n"
