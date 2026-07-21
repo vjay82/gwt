@@ -114,7 +114,8 @@ public class AstConstructor {
       }
     }
 
-    ImplementClassLiteralsAsFields.exec(jprogram, true);
+    ImplementClassLiteralsAsFields.exec(jprogram, true,
+        compilerContext.getOptions().isLambdaClassNamesDisabled());
     return jprogram;
   }
 }

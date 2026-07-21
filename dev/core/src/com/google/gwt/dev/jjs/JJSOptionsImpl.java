@@ -33,6 +33,7 @@ public class JJSOptionsImpl implements JJSOptions, Serializable {
   private boolean incrementalCompile = false;
   private boolean compilerMetricsEnabled = false;
   private boolean disableClassMetadata = false;
+  private boolean disableLambdaClassNames = false;
   private boolean enableAssertions;
   private int fragmentCount = -1;
   private boolean inlineLiteralParameters = true;
@@ -62,6 +63,7 @@ public class JJSOptionsImpl implements JJSOptions, Serializable {
   public void copyFrom(JJSOptions other) {
     setAddRuntimeChecks(other.shouldAddRuntimeChecks());
     setClassMetadataDisabled(other.isClassMetadataDisabled());
+    setLambdaClassNamesDisabled(other.isLambdaClassNamesDisabled());
     setClusterSimilarFunctions(other.shouldClusterSimilarFunctions());
     setIncrementalCompileEnabled(other.isIncrementalCompileEnabled());
     setCompilerMetricsEnabled(other.isCompilerMetricsEnabled());
@@ -123,6 +125,11 @@ public class JJSOptionsImpl implements JJSOptions, Serializable {
   }
 
   @Override
+  public boolean isLambdaClassNamesDisabled() {
+    return disableLambdaClassNames;
+  }
+
+  @Override
   public boolean isCompilerMetricsEnabled() {
     return compilerMetricsEnabled;
   }
@@ -174,6 +181,11 @@ public class JJSOptionsImpl implements JJSOptions, Serializable {
   @Override
   public void setClassMetadataDisabled(boolean disabled) {
     disableClassMetadata = disabled;
+  }
+
+  @Override
+  public void setLambdaClassNamesDisabled(boolean disabled) {
+    disableLambdaClassNames = disabled;
   }
 
   @Override

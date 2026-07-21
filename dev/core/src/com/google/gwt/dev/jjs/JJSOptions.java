@@ -20,6 +20,7 @@ import com.google.gwt.dev.util.arg.OptionCheckedMode;
 import com.google.gwt.dev.util.arg.OptionClosureFormattedOutput;
 import com.google.gwt.dev.util.arg.OptionClusterSimilarFunctions;
 import com.google.gwt.dev.util.arg.OptionDisableClassMetadata;
+import com.google.gwt.dev.util.arg.OptionDisableLambdaClassNames;
 import com.google.gwt.dev.util.arg.OptionEnableAssertions;
 import com.google.gwt.dev.util.arg.OptionFragmentCount;
 import com.google.gwt.dev.util.arg.OptionGenerateJsInteropExports;
@@ -51,5 +52,6 @@ public interface JJSOptions extends OptionOptimize,
     OptionJsonSoycEnabled, OptionOrdinalizeEnums, OptionRemoveDuplicateFunctions, OptionStrict,
     OptionSoycHtmlDisabled, OptionFragmentCount, OptionSourceLevel, OptionNamespace,
     OptionCheckedMode, OptionGenerateJsInteropExports, OptionUseDetailedTypeIds,
-    OptionAllowJDTConstantInlining, OptionMethodNameDisplayMode, OptionClosureFormattedOutput {
+    OptionAllowJDTConstantInlining, OptionMethodNameDisplayMode, OptionClosureFormattedOutput,
+    OptionDisableLambdaClassNames {
 }

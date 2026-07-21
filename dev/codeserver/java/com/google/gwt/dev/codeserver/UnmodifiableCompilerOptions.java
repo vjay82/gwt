@@ -49,6 +49,11 @@ abstract class UnmodifiableCompilerOptions implements CompilerOptions {
   }
 
   @Override
+  public final void setLambdaClassNamesDisabled(boolean disabled) {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
   public void setClusterSimilarFunctions(boolean enabled) {
     throw new UnsupportedOperationException();
   }

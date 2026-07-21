@@ -134,6 +134,11 @@ public class PrecompileTaskOptionsImpl extends CompileTaskOptionsImpl
   }
 
   @Override
+  public boolean isLambdaClassNamesDisabled() {
+    return jjsOptions.isLambdaClassNamesDisabled();
+  }
+
+  @Override
   public boolean isCompilerMetricsEnabled() {
     return jjsOptions.isCompilerMetricsEnabled();
   }
@@ -200,6 +205,11 @@ public class PrecompileTaskOptionsImpl extends CompileTaskOptionsImpl
   @Override
   public void setClassMetadataDisabled(boolean disabled) {
     jjsOptions.setClassMetadataDisabled(disabled);
+  }
+
+  @Override
+  public void setLambdaClassNamesDisabled(boolean disabled) {
+    jjsOptions.setLambdaClassNamesDisabled(disabled);
   }
 
   @Override

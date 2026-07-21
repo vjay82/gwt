@@ -22,6 +22,7 @@ import com.google.gwt.dev.jjs.ast.JArrayType;
 import com.google.gwt.dev.jjs.ast.JClassLiteral;
 import com.google.gwt.dev.jjs.ast.JClassType;
 import com.google.gwt.dev.jjs.ast.JDeclarationStatement;
+import com.google.gwt.dev.jjs.ast.JDeclaredType;
 import com.google.gwt.dev.jjs.ast.JEnumType;
 import com.google.gwt.dev.jjs.ast.JExpression;
 import com.google.gwt.dev.jjs.ast.JField;
@@ -98,13 +99,14 @@ public class ImplementClassLiteralsAsFields {
     CREATE_FOR_ENUM() {
       @Override
       JMethodCall createCall(SourceInfo info, JProgram program, JType type,
-          JLiteral superclassLiteral) {
+          JLiteral superclassLiteral, boolean disableLambdaClassNames) {
         JEnumType enumType = type.isEnumOrSubclass();
         assert enumType != null;
 
         // createForEnum(packageName, typeName, runtimeTypeReference, Enum.class,  type.values(),
         // type.valueOf(java/lang/String));
-        JMethodCall call = createBaseCall(info, program, type, "Class.createForEnum");
+        JMethodCall call = createBaseCall(info, program, type, "Class.createForEnum",
+            disableLambdaClassNames);
 
         call.addArg(new JRuntimeTypeReference(info, program.getTypeJavaLangObject(),
             (JReferenceType) type));
@@ -140,11 +142,12 @@ public class ImplementClassLiteralsAsFields {
     CREATE_FOR_CLASS() {
       @Override
       JMethodCall createCall(SourceInfo info, JProgram program, JType type,
-          JLiteral superclassLiteral) {
+          JLiteral superclassLiteral, boolean disableLambdaClassNames) {
 
         // Class.createForClass(packageName, typeName, runtimeTypeReference, superclassliteral)
         JMethodCall call =
-            createBaseCall(info, program, type, RuntimeConstants.CLASS_CREATE_FOR_CLASS);
+            createBaseCall(info, program, type, RuntimeConstants.CLASS_CREATE_FOR_CLASS,
+                disableLambdaClassNames);
 
         call.addArg(new JRuntimeTypeReference(info, program.getTypeJavaLangObject(),
             (JReferenceType) type));
@@ -155,7 +158,7 @@ public class ImplementClassLiteralsAsFields {
     CREATE_FOR_PRIMITIVE() {
       @Override
       JMethodCall createCall(SourceInfo info, JProgram program, JType type,
-          JLiteral superclassLiteral) {
+          JLiteral superclassLiteral, boolean disableLambdaClassNames) {
 
         // Class.createForPrimitive(typeName, typeSignature)
         JMethodCall call = new JMethodCall(info, null, program.getIndexedMethod(
@@ -168,25 +171,36 @@ public class ImplementClassLiteralsAsFields {
     CREATE_FOR_INTERFACE() {
       @Override
       JMethodCall createCall(SourceInfo info, JProgram program, JType type,
-          JLiteral superclassLiteral) {
+          JLiteral superclassLiteral, boolean disableLambdaClassNames) {
 
         // Class.createForInterface(packageName, typeName)
-        return createBaseCall(info, program, type, RuntimeConstants.CLASS_CREATE_FOR_INTERFACE);
+        return createBaseCall(info, program, type, RuntimeConstants.CLASS_CREATE_FOR_INTERFACE,
+            disableLambdaClassNames);
       }
     };
 
     abstract JMethodCall createCall(SourceInfo info, JProgram program, JType type,
-        JLiteral superclassLiteral);
+        JLiteral superclassLiteral, boolean disableLambdaClassNames);
 
     private static JMethodCall createBaseCall(SourceInfo info, JProgram program, JType type,
-        String indexedMethodName) {
+        String indexedMethodName, boolean disableLambdaClassNames) {
 
       String[] compoundName = maybeMangleJSOTypeName(type);
+      JExpression classNameLiteral =
+          disableLambdaClassNames && isLambdaType(type)
+              ? program.getStringLiteral(info, "")
+              : getCompoundNameLiteral(program, info, compoundName);
       JMethodCall call = new JMethodCall(info, null, program.getIndexedMethod(indexedMethodName),
           program.getStringLiteral(info, type.getPackageName()),
-          getCompoundNameLiteral(program, info, compoundName));
+          classNameLiteral);
 
       return call;
+    }
+
+    private static boolean isLambdaType(JType type) {
+      return type instanceof JDeclaredType
+          && ((JDeclaredType) type).getClassDisposition()
+              == JDeclaredType.NestedClassDisposition.LAMBDA;
     }
 
     private static String[] maybeMangleJSOTypeName(JType type) {
@@ -342,8 +356,10 @@ public class ImplementClassLiteralsAsFields {
     }
   }
 
-  public static void exec(JProgram program, boolean shouldOptimize) {
-    new ImplementClassLiteralsAsFields(program, shouldOptimize).execImpl();
+  public static void exec(JProgram program, boolean shouldOptimize,
+      boolean disableLambdaClassNames) {
+    new ImplementClassLiteralsAsFields(program, shouldOptimize, disableLambdaClassNames)
+        .execImpl();
   }
 
   private final Map<JType, JField> classLiteralFields = Maps.newIdentityHashMap();
@@ -351,13 +367,16 @@ public class ImplementClassLiteralsAsFields {
   private final JProgram program;
   private final JClassType typeClassLiteralHolder;
   private final boolean shouldOptimize;
+  private final boolean disableLambdaClassNames;
 
-  private ImplementClassLiteralsAsFields(JProgram program, boolean shouldOptimize) {
+  private ImplementClassLiteralsAsFields(JProgram program, boolean shouldOptimize,
+      boolean disableLambdaClassNames) {
     this.program = program;
     this.typeClassLiteralHolder = program.getTypeClassLiteralHolder();
     this.classLiteralHolderClinitBody =
         (JMethodBody) typeClassLiteralHolder.getClinitMethod().getBody();
     this.shouldOptimize = shouldOptimize;
+    this.disableLambdaClassNames = disableLambdaClassNames;
     assert program.getDeclaredTypes().contains(typeClassLiteralHolder);
   }
 
@@ -452,7 +471,7 @@ public class ImplementClassLiteralsAsFields {
     }
 
     return literalFactoryMethodByTypeClass.get(typeClass).createCall(info, program, type,
-        getSuperclassClassLiteral(info, type));
+        getSuperclassClassLiteral(info, type), disableLambdaClassNames);
   }
 
   private void resolveClassLiteral(JClassLiteral x) {

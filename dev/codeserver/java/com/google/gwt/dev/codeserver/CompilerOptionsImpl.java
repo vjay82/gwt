@@ -172,6 +172,11 @@ class CompilerOptionsImpl extends UnmodifiableCompilerOptions {
   }
 
   @Override
+  public boolean isLambdaClassNamesDisabled() {
+    return false;
+  }
+
+  @Override
   public boolean isCompilerMetricsEnabled() {
     return false;
   }

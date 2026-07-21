@@ -1241,7 +1241,8 @@ public final class JavaToJavaScriptCompiler {
         ReplaceRunAsyncs.exec(logger, jprogram);
         CodeSplitters.pickInitialLoadSequence(logger, jprogram, configurationProperties);
       }
-      ImplementClassLiteralsAsFields.exec(jprogram, shouldOptimize());
+      ImplementClassLiteralsAsFields.exec(jprogram, shouldOptimize(),
+          options.isLambdaClassNamesDisabled());
 
       // TODO(stalcup): hide metrics gathering in a callback or subclass
       logAstTypeMetrics(precompilationMetrics);

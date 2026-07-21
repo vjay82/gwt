@@ -25,6 +25,7 @@ import com.google.gwt.dev.util.arg.ArgHandlerDisableClassMetadata;
 import com.google.gwt.dev.util.arg.ArgHandlerDisableClusterSimilarFunctions;
 import com.google.gwt.dev.util.arg.ArgHandlerDisableGeneratingOnShards;
 import com.google.gwt.dev.util.arg.ArgHandlerDisableInlineLiteralParameters;
+import com.google.gwt.dev.util.arg.ArgHandlerDisableLambdaClassNames;
 import com.google.gwt.dev.util.arg.ArgHandlerDisableOrdinalizeEnums;
 import com.google.gwt.dev.util.arg.ArgHandlerDisableRemoveDuplicateFunctions;
 import com.google.gwt.dev.util.arg.ArgHandlerDisableRunAsync;
@@ -56,6 +57,7 @@ class PrecompileTaskArgProcessor extends CompileArgProcessor {
     registerHandler(new ArgHandlerCompilerMetrics(options));
     registerHandler(new ArgHandlerDisableCastChecking(options));
     registerHandler(new ArgHandlerDisableClassMetadata(options));
+    registerHandler(new ArgHandlerDisableLambdaClassNames(options));
     registerHandler(new ArgHandlerDisableClusterSimilarFunctions(options));
     registerHandler(new ArgHandlerDisableRemoveDuplicateFunctions(options));
     registerHandler(new ArgHandlerDisableGeneratingOnShards(options));
