@@ -44,15 +44,15 @@
     <call-subproject subproject="servlet" subtarget="build"/>
   </target>
 
-  <target name="buildForMira" depends="buildonly,strip-gwt-dev" description="building for NTT Mira">
+  <target name="buildForMira" depends="buildonly,build-stripped-gwt-dev" description="building for NTT Mira">
 
   </target>
 
-  <target name="strip-gwt-dev"
+  <target name="build-stripped-gwt-dev"
           description="Strips redundant/JDK-provided packages from gwt-dev.jar">
     <property name="gwt.dev.jar" location="${gwt.build.lib}/gwt-dev.jar"/>
-    <property name="gwt.dev.jar.tmp" location="${gwt.build.lib}/gwt-dev-stripped.jar"/>
-    <jar destfile="${gwt.dev.jar.tmp}" duplicate="preserve" filesonly="false" index="true">
+    <property name="gwt.dev.jar.stripped" location="${gwt.build.lib}/gwt-dev-stripped.jar"/>
+    <jar destfile="${gwt.dev.jar.stripped}" duplicate="preserve" filesonly="false" index="true">
       <zipfileset src="${gwt.dev.jar}">
         <exclude name="com/google/gson/**"/>
         <exclude name="org/apache/commons/**"/>
@@ -62,7 +62,6 @@
         <exclude name="javax/xml/**"/>
       </zipfileset>
     </jar>
-    <move file="${gwt.dev.jar.tmp}" tofile="${gwt.dev.jar}" overwrite="true"/>
   </target>
 
   <target name="dist" depends="build, doc" description="[action] Make all the distributions">
