@@ -242,6 +242,24 @@ public class JsReportGenerationVisitor extends
   }
 
   @Override
+  protected void reportFunctionScopeStart(JsFunction x) {
+    // Chrome DevTools "Friendly Call Frames" renames a stack frame only when the source map has a `name` entry on the
+    // mapping at the opening '(' of the function's parameter list (see the Chrome DevTools NamesResolver:
+    // getFunctionNameFromScopeStart requires the mapped scope-start char to be '('). The output cursor is positioned
+    // exactly at that '(' here, so emit a one-character range carrying the function's SourceInfo; the Java correlation
+    // on that SourceInfo is turned into the frame name by SourceMapRecorder.getJavaName().
+    SourceInfo info = x.getSourceInfo();
+    if (info == null || info == SourceOrigin.UNKNOWN || info.getFileName() == null
+        || info.getStartLine() < 0) {
+      return;
+    }
+    int position = out.getPosition();
+    int line = out.getLine();
+    int column = out.getColumn();
+    ranges.add(new Range(position, position + 1, line, column, line, column + 1, info));
+  }
+
+  @Override
   public JsSourceMap getSourceInfoMap() {
     return new JsSourceMap(ranges, out.getPosition(), out.getLine());
   }

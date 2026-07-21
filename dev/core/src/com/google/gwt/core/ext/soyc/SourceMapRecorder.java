@@ -158,9 +158,15 @@ public class SourceMapRecorder {
       return null;
     }
 
-    // Conserve space by not recording the package name. The sourcemap already contains the full
-    // path of the Java file (in the "sources" field), which is usually enough to identify
-    // the package. (The name may be a synthetic method name.)
-    return correlation.getIdent();
+    // The correlation's identifier is a JSNI-style reference, e.g. "pkg.Class::method(Lsig;)Lret;". Debuggers such
+    // as Chrome DevTools only display a source-map "names" entry as the stack-frame function name when it looks like
+    // a JavaScript identifier, so drop the JSNI parameter/return signature and turn "::" into "." to yield a plain
+    // dotted name like "pkg.Class.method". Types/fields (no signature) are returned unchanged apart from "::"->".".
+    String ident = correlation.getIdent();
+    int signatureStart = ident.indexOf('(');
+    if (signatureStart >= 0) {
+      ident = ident.substring(0, signatureStart);
+    }
+    return ident.replace("::", ".");
   }
 }

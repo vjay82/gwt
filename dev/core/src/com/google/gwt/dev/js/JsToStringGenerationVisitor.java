@@ -863,6 +863,7 @@ public class JsToStringGenerationVisitor extends JsVisitor {
       _nameOf(x);
     }
 
+    reportFunctionScopeStart(x);
     _lparen();
     boolean sep = false;
     for (JsParameter param : x.getParameters()) {
@@ -874,6 +875,15 @@ public class JsToStringGenerationVisitor extends JsVisitor {
     accept(x.getBody());
     needSemi = true;
     return false;
+  }
+
+  /**
+   * Hook called with the output cursor positioned exactly at the opening {@code (} of a function's parameter list
+   * (before it is printed). The no-op base implementation does nothing; {@code JsReportGenerationVisitor} overrides it
+   * to record a source-map name there so Chrome DevTools renames the stack frame ("Friendly Call Frames": a frame is
+   * renamed only when the source map has a {@code names} entry on the mapping at the parameter list's left paren).
+   */
+  protected void reportFunctionScopeStart(JsFunction x) {
   }
 
   private boolean visitAsArrow(JsFunction x) {

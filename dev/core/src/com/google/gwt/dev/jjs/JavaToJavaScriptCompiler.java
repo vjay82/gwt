@@ -692,8 +692,8 @@ public final class JavaToJavaScriptCompiler {
           ((DependencyGraphRecorder) dependenciesAndRecorder.getRight()), jprogram));
     } else if (isSourceMapsEnabled) {
       logger.log(TreeLogger.INFO, "Source Maps Enabled");
-      permutationResult.addArtifacts(SourceMapRecorder.exec(permutationId, sourceInfoMaps,
-          options.getSourceMapFilePrefix()));
+      permutationResult.addArtifacts(SourceMapRecorder.execWithJavaNames(permutationId,
+          sourceInfoMaps, options.getSourceMapFilePrefix()));
     }
   }
 
@@ -1296,7 +1296,12 @@ public final class JavaToJavaScriptCompiler {
     try (SimpleEvent ignored = new SimpleEvent("Unify AST")) {
       unifyJavaAst(precompilationContext);
     }
-    if (options.isSoycEnabled() || options.isJsonSoycEnabled()) {
+    if (options.isSoycEnabled() || options.isJsonSoycEnabled()
+        || sourceMapsEnabledInAnyPermutation(precompilationContext)) {
+      // SourceInfoCorrelator attaches Java Correlations (type/method/field idents) to the AST's SourceInfos.
+      // These are what SourceMapRecorder.execWithJavaNames() reads to populate the source map's "names" field, so the
+      // browser's DevTools show the Java method/member name per stack frame (not just the file:line). Previously this
+      // only ran for SOYC; run it for source-map builds too.
       SourceInfoCorrelator.exec(jprogram);
     }
 
@@ -1307,6 +1312,16 @@ public final class JavaToJavaScriptCompiler {
     jprogram.typeOracle.computeBeforeAST(StandardTypes.createFrom(jprogram),
         jprogram.getDeclaredTypes(), jprogram.getModuleDeclaredTypes(), deletedTypeNames);
     return compilationState;
+  }
+
+  /**
+   * Returns whether source maps are enabled for at least one permutation, i.e. whether the AST should be correlated so
+   * that Java names can be written to the source map's "names" field (see SourceMapRecorder.execWithJavaNames).
+   */
+  private static boolean sourceMapsEnabledInAnyPermutation(PrecompilationContext precompilationContext) {
+    Permutation[] permutations = precompilationContext.getPermutations();
+    return permutations.length > 0
+        && permutations[0].getProperties().isTrueInAnyPermutation("compiler.useSourceMaps");
   }
 
   /**
