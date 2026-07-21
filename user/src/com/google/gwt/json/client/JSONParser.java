@@ -89,8 +89,7 @@ public class JSONParser {
   }
 
   static void throwUnknownTypeException(String typeString) {
-    throw new JSONException("Unexpected typeof result '" + typeString
-        + "'; please report this bug to the GWT team");
+    throw new JSONException("Unexpected typeof result '" + typeString + "'");
   }
 
   /**
@@ -120,7 +119,8 @@ public class JSONParser {
     if (v !== o) {
       // It was a primitive wrapper, unwrap it and try again.
       var func = @com.google.gwt.json.client.JSONParser::typeMap[typeof v];
-      return func ? func(v) : @com.google.gwt.json.client.JSONParser::throwUnknownTypeException(Ljava/lang/String;)(typeof v);
+      // return func ? func(v) : @com.google.gwt.json.client.JSONParser::throwUnknownTypeException(Ljava/lang/String;)(typeof v);
+      return func(v); // JSON is pretty much set in stone, so we don't need to worry about unknown types here.
     } else if (o instanceof Array || o instanceof $wnd.Array) {
       // Looks like an Array; wrap as JSONArray.
       // NOTE: this test can fail for objects coming from a different window,

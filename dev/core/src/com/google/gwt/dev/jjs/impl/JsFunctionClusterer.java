@@ -234,17 +234,30 @@ public class JsFunctionClusterer extends JsAbstractTextTransformer {
       Range entireProgram =
           new Range(0, oldStatementRanges[oldStatementRanges.length - 1].getEnd());
       for (int i = 0, j = 0; j < oldExpressionRanges.size(); j++) {
-        Range oldExpression = oldExpressionRanges.get(j);
-        if (oldExpression.equals(entireProgram)) {
-          updatedRanges.add(oldExpression);
+        Range oldExpressionRange = oldExpressionRanges.get(j);
+        if (oldExpressionRange.equals(entireProgram)) {
+          updatedRanges.add(oldExpressionRange);
           continue;
+        }
+
+        // Both the statement ranges and the expression ranges are sorted in source
+        // order, and every expression is nested within exactly one statement. Walk the
+        // statements forward in lock-step with the expressions until we reach the
+        // statement that contains the current expression, then shift the expression by
+        // the amount that statement moved during clustering. Without advancing 'i' every
+        // expression would be shifted by the first statement's delta, which leaves the
+        // ranges of any relocated function (e.g. lambda bodies) pointing at the byte
+        // offsets they occupied before clustering -- producing wrong Java line numbers in
+        // the source map for OBFUSCATED output.
+        while (i < oldStatementRanges.length - 1
+            && oldExpressionRange.getStart() >= oldStatementRanges[i].getEnd()) {
+          i++;
         }
 
         Range oldStatement = oldStatementRanges[i];
         Range newStatement = statementShifts.get(oldStatement);
         int shift = newStatement.getStart() - oldStatement.getStart();
 
-        Range oldExpressionRange = oldExpressionRanges.get(j);
         Range newExpressionRange = new Range(oldExpressionRange.getStart() + shift,
             oldExpressionRange.getEnd() + shift, oldExpressionRange.getSourceInfo());
         updatedRanges.add(newExpressionRange);
