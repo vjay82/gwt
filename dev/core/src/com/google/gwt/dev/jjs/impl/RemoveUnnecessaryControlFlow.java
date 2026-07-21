@@ -189,10 +189,6 @@ public class RemoveUnnecessaryControlFlow {
        */
       public void updateLastStatement(JMethod containingMethod, JBlock block,
             OptimizerContext ctx) {
-        if (block == null) {
-          // Optional blocks (such as a try's missing finally) are absent, nothing to rewrite.
-          return;
-        }
         List<JStatement> stmts = block.getStatements();
         if (stmts.isEmpty()) {
           return;
@@ -234,7 +230,9 @@ public class RemoveUnnecessaryControlFlow {
           loop().updateLastStatement(containingMethod, doStmt.getBody(), ctx);
         } else if (lastStmt instanceof JTryStatement tryStmt) {
           updateLastStatement(containingMethod, tryStmt.getTryBlock(), ctx);
-          updateLastStatement(containingMethod, tryStmt.getFinallyBlock(), ctx);
+          if (tryStmt.getFinallyBlock() != null) {
+            updateLastStatement(containingMethod, tryStmt.getFinallyBlock(), ctx);
+          }
           for (JTryStatement.CatchClause catchBlock : tryStmt.getCatchClauses()) {
             updateLastStatement(containingMethod, catchBlock.getBlock(), ctx);
           }
@@ -255,8 +253,7 @@ public class RemoveUnnecessaryControlFlow {
        * @param ctx the current context
        */
       public void updateContinues(JMethod containingMethod, JBlock block, OptimizerContext ctx) {
-        if (block == null || block.isEmpty()) {
-          // Optional blocks (such as a try's missing finally) are absent, nothing to rewrite.
+        if (block.isEmpty()) {
           return;
         }
         List<JStatement> stmts = block.getStatements();
@@ -280,7 +277,9 @@ public class RemoveUnnecessaryControlFlow {
           updateContinues(containingMethod, ifStmt.getElseStmt(), ctx);
         } else if (lastStmt instanceof JTryStatement tryStmt) {
           updateContinues(containingMethod, tryStmt.getTryBlock(), ctx);
-          updateContinues(containingMethod, tryStmt.getFinallyBlock(), ctx);
+          if (tryStmt.getFinallyBlock() != null) {
+            updateContinues(containingMethod, tryStmt.getFinallyBlock(), ctx);
+          }
           for (JTryStatement.CatchClause catchBlock : tryStmt.getCatchClauses()) {
             updateContinues(containingMethod, catchBlock.getBlock(), ctx);
           }
