@@ -1514,74 +1514,82 @@ public class CompilerTest extends ArgProcessorTestBase {
 
     MockJavaResource widgetsWithThreeLambdas =
         JavaResourceBase.createMockJavaResource("com.foo.Widgets",
-            "package com.foo;",
-            "public class Widgets {",
-            "  interface IntFilter {",
-            "    boolean test(int value);",
-            "  }",
-            "  public static int state;",
-            "  public static void ping() {",
-            "    state++;",
-            "  }",
-            "  public static void trigger() {",
-            "    Runnable a = () -> state++;",
-            "    int cursorRow = 10;",
-            "    IntFilter filter = value -> value >= cursorRow;",
-            "    Runnable c = () -> state--;",
-            "    a.run();",
-            "    if (filter.test(11)) {",
-            "      c.run();",
-            "    }",
-            "  }",
-            "}");
+            """
+            package com.foo;
+            public class Widgets {
+              interface IntFilter {
+                boolean test(int value);
+              }
+              public static int state;
+              public static void ping() {
+                state++;
+              }
+              public static void trigger() {
+                Runnable a = () -> state++;
+                int cursorRow = 10;
+                IntFilter filter = value -> value >= cursorRow;
+                Runnable c = () -> state--;
+                a.run();
+                if (filter.test(11)) {
+                  c.run();
+                }
+              }
+            }
+            """);
     // The same type with an extra lambda inserted first, so that the synthetic lambda types of
     // trigger() are renumbered and the name 'Widgets$lambda$1$Type' etc. now denote different
     // lambdas than before.
     MockJavaResource widgetsWithFourLambdas =
         JavaResourceBase.createMockJavaResource("com.foo.Widgets",
-            "package com.foo;",
-            "public class Widgets {",
-            "  interface IntFilter {",
-            "    boolean test(int value);",
-            "  }",
-            "  public static int state;",
-            "  public static void ping() {",
-            "    state++;",
-            "  }",
-            "  public static void trigger() {",
-            "    Runnable z = () -> state = state + 12345;",
-            "    z.run();",
-            "    Runnable a = () -> state++;",
-            "    int cursorRow = 10;",
-            "    IntFilter filter = value -> value >= cursorRow;",
-            "    Runnable c = () -> state--;",
-            "    a.run();",
-            "    if (filter.test(11)) {",
-            "      c.run();",
-            "    }",
-            "  }",
-            "}");
+            """
+            package com.foo;
+            public class Widgets {
+              interface IntFilter {
+                boolean test(int value);
+              }
+              public static int state;
+              public static void ping() {
+                state++;
+              }
+              public static void trigger() {
+                Runnable z = () -> state = state + 12345;
+                z.run();
+                Runnable a = () -> state++;
+                int cursorRow = 10;
+                IntFilter filter = value -> value >= cursorRow;
+                Runnable c = () -> state--;
+                a.run();
+                if (filter.test(11)) {
+                  c.run();
+                }
+              }
+            }
+            """);
     MockJavaResource entryPointCallingTrigger =
         JavaResourceBase.createMockJavaResource("com.foo.TestEntryPoint",
-            "package com.foo;",
-            "import com.google.gwt.core.client.EntryPoint;",
-            "public class TestEntryPoint implements EntryPoint {",
-            "  @Override",
-            "  public void onModuleLoad() {",
-            "    Widgets.ping();",
-            "    Widgets.trigger();",
-            "  }",
-            "}");
+            """
+            package com.foo;
+            import com.google.gwt.core.client.EntryPoint;
+            public class TestEntryPoint implements EntryPoint {
+              @Override
+              public void onModuleLoad() {
+                Widgets.ping();
+                Widgets.trigger();
+              }
+            }
+            """);
     MockJavaResource entryPointNotCallingTrigger =
         JavaResourceBase.createMockJavaResource("com.foo.TestEntryPoint",
-            "package com.foo;",
-            "import com.google.gwt.core.client.EntryPoint;",
-            "public class TestEntryPoint implements EntryPoint {",
-            "  @Override",
-            "  public void onModuleLoad() {",
-            "    Widgets.ping();",
-            "  }",
-            "}");
+            """
+            package com.foo;
+            import com.google.gwt.core.client.EntryPoint;
+            public class TestEntryPoint implements EntryPoint {
+              @Override
+              public void onModuleLoad() {
+                Widgets.ping();
+              }
+            }
+            """);
 
     MinimalRebuildCache relinkMinimalRebuildCache = new MinimalRebuildCache();
     File relinkApplicationDir = createTempDir();
