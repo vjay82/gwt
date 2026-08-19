@@ -278,6 +278,10 @@ public class MinimalRebuildCache implements Serializable {
    * changes in the modified types. For example if the parent of class Foo was changed then the
    * castmaps in all children of Foo need to be recreated.
    * <p>
+   * Note that the returned set is not the same as the set of types whose cache was cleared. Cached
+   * output is cleared for every stale type, while the returned set is narrowed to the stale types
+   * that are currently reachable, since unreachable types should not be artificially retraversed.
+   * <p>
    * In some ways this process is similar to that performed by the CompilationUnitInvalidator but it
    * differs both in what type of cached objects are being cleared (JS versus CompilationUnits) and
    * in what invalidation rules must be applied. CompilationUnitInvalidator is concerned only with
