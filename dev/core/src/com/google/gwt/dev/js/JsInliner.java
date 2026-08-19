@@ -67,6 +67,7 @@ import com.google.gwt.thirdparty.guava.common.collect.Sets;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
@@ -809,6 +810,8 @@ public class JsInliner {
          */
         op = accept(op);
         ctx.replaceMe(op);
+        // The accept above may have re-cached the caller while op was still detached.
+        containsNestedFunctionsCache.get().remove(callerFunction);
       }
 
       if (inlining.pop() != invokedFunction) {
@@ -1027,6 +1030,8 @@ public class JsInliner {
           && isInvokedMoreThanOnce(invokedFunction)) {
         return x;
       }
+
+      containsNestedFunctionsCache.get().remove(callerFunction);
 
       // We've committed to the inlining, ensure the vars are created
       newLocalVariableStack.peek().addAll(extrudedNames);
@@ -1557,6 +1562,13 @@ public class JsInliner {
       "gwt.jsinlinerInliningBias", "5"));
 
   /**
+   * Caches {@link #containsNestedFunctions(JsFunction)}, which would otherwise re-traverse a whole
+   * function body at every call site. Thread local because permutations compile concurrently.
+   */
+  private static final ThreadLocal<Map<JsFunction, Boolean>> containsNestedFunctionsCache =
+      ThreadLocal.withInitial(IdentityHashMap::new);
+
+  /**
    * Static entry point used by JavaToJavaScriptCompiler.
    */
   public static int exec(JsProgram program, Collection<JsNode> toInline) {
@@ -1596,12 +1608,19 @@ public class JsInliner {
    * Examine a JsFunction to determine if it contains nested functions.
    */
   private static boolean containsNestedFunctions(JsFunction func) {
+    Boolean cached = containsNestedFunctionsCache.get().get(func);
+    if (cached != null) {
+      return cached;
+    }
     NestedFunctionVisitor v = new NestedFunctionVisitor();
     v.accept(func.getBody());
-    return v.containsNestedFunctions();
+    boolean result = v.containsNestedFunctions();
+    containsNestedFunctionsCache.get().put(func, result);
+    return result;
   }
 
   private static int execImpl(JsProgram program, Collection<JsNode> toInline) {
+    containsNestedFunctionsCache.get().clear();
     try (OptimizerStats stats = OptimizerStats.optimization(NAME)) {
 
       // We are not covering the whole AST, hence we will try to inline functions with a single call
