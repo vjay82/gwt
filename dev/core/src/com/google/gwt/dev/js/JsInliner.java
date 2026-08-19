@@ -1608,15 +1608,11 @@ public class JsInliner {
    * Examine a JsFunction to determine if it contains nested functions.
    */
   private static boolean containsNestedFunctions(JsFunction func) {
-    Boolean cached = containsNestedFunctionsCache.get().get(func);
-    if (cached != null) {
-      return cached;
-    }
-    NestedFunctionVisitor v = new NestedFunctionVisitor();
-    v.accept(func.getBody());
-    boolean result = v.containsNestedFunctions();
-    containsNestedFunctionsCache.get().put(func, result);
-    return result;
+    return containsNestedFunctionsCache.get().computeIfAbsent(func, function -> {
+      NestedFunctionVisitor v = new NestedFunctionVisitor();
+      v.accept(function.getBody());
+      return v.containsNestedFunctions();
+    });
   }
 
   private static int execImpl(JsProgram program, Collection<JsNode> toInline) {
