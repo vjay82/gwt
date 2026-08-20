@@ -129,6 +129,8 @@ public class JsReportGenerationVisitorTest extends TestCase {
     checkMappings(
         "function f(){\n  return 42;\n}\n\n",
         "function f(){\n  return 42;\n}\n",
+        // one-char range at the parameter list's '(' carrying the function name
+        "(",
         "  return 42;\n"
     );
   }
@@ -137,8 +139,8 @@ public class JsReportGenerationVisitorTest extends TestCase {
     compact = true;
     includeInlinedRanges = true;
     program = parseJs("function f() { return 42; }");
-    checkMappings("function f(){return 42}\n",
-        "function f(){return 42}",
+    checkMappings("function f(){return 42}",
+        "(",
         "return 42",
         "42"
     );
