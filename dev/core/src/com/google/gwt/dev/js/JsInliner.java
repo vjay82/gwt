@@ -612,6 +612,27 @@ public class JsInliner {
   }
 
   /**
+   * Collects the names that are referenced without a qualifier, i.e. the ones that still need a
+   * declaration in the scope the expression ends up in.
+   */
+  private static class ReferencedNamesCollector extends JsVisitor {
+    private static Set<JsName> collect(JsExpression expression) {
+      ReferencedNamesCollector collector = new ReferencedNamesCollector();
+      collector.accept(expression);
+      return collector.referencedNames;
+    }
+
+    private final Set<JsName> referencedNames = Sets.newHashSet();
+
+    @Override
+    public void endVisit(JsNameRef x, JsContext ctx) {
+      if (x.getQualifier() == null && x.getName() != null) {
+        referencedNames.add(x.getName());
+      }
+    }
+  }
+
+  /**
    * This class looks for function invocations that can be inlined and performs
    * the replacement by replacing the JsInvocation with a comma expression
    * consisting of the expressions evaluated by the target function. A second
@@ -1013,8 +1034,21 @@ public class JsInliner {
       }
       op = nameRefReplacer.accept(op);
 
+      List<JsName> renamedExtrudedNames = Lists.newArrayList(extrudedNames);
+
       // Normalize any nested comma expressions that we may have generated.
       op = (new CommaNormalizer(extrudedNames)).accept(op);
+
+      // CommaNormalizer drops a name when it collapses (name = expr, name), but the name may still
+      // be assigned or read by the rest of the inlined body, in which case dropping its declaration
+      // would turn it into an implicit global.
+      Set<JsName> referencedNames = ReferencedNamesCollector.collect(op);
+      extrudedNames.clear();
+      for (JsName name : renamedExtrudedNames) {
+        if (referencedNames.contains(name)) {
+          extrudedNames.add(name);
+        }
+      }
 
       if (callerFunction == programFunction && extrudedNames.size() > 0) {
         // Don't add additional variables to the top-level program.

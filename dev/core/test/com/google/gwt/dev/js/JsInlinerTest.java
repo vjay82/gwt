@@ -394,6 +394,36 @@ public class JsInlinerTest extends OptimizerTestBase {
     verifyOptimizedObfuscated(expected, code);
   }
 
+  /**
+   * This is inspired by <a href="https://github.com/gwtproject/gwt/issues/10389">issue 10389</a>.
+   */
+  public void testDeclareLocalStillReferencedAfterCommaNormalization() throws Exception {
+    String code = Joiner.on('\n').join(
+        "function readUnsignedShort(t){",
+        "  var b1 = t.read();",
+        "  var b2 = t.read();",
+        "  var result = b2;",
+        "  result = (result << 8) | (b1 & 255);",
+        "  return result;",
+        "}",
+
+        "function readChar_doNotInline(t){",
+        "  return readUnsignedShort(t) & 65535;",
+        "}",
+
+        "readChar_doNotInline(o);");
+
+    String expected = Joiner.on('\n').join(
+        "function readChar_doNotInline(t){",
+        "  var b1,b2,result;",
+        "  return (b1=t.read(),b2=t.read(),result=b2,result<<8|b1&255)&65535;",
+        "}",
+
+        "readChar_doNotInline(o);");
+
+    verifyOptimized(expected, code);
+  }
+
   private void verifyNoChange(String input) throws Exception {
     verifyOptimized(input, input);
   }
