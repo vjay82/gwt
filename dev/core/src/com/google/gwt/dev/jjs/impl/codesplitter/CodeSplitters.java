@@ -36,12 +36,22 @@ import com.google.gwt.thirdparty.guava.common.base.Joiner;
 import com.google.gwt.thirdparty.guava.common.collect.Collections2;
 import com.google.gwt.thirdparty.guava.common.collect.LinkedListMultimap;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
+import com.google.gwt.thirdparty.guava.common.collect.Maps;
 import com.google.gwt.thirdparty.guava.common.collect.Multimap;
+import com.google.gwt.thirdparty.guava.common.collect.Queues;
+import com.google.gwt.thirdparty.guava.common.util.concurrent.ThreadFactoryBuilder;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Utility function related to code splitting.
@@ -251,5 +261,63 @@ public class CodeSplitters {
       runAsyncsByName.put(name, runAsync);
     }
     return runAsyncsByName;
+  }
+
+  /**
+   * Runs independent code splitting subtasks. Shared by all code splitting phases and by all
+   * permutations compiling in this JVM, so that the thread count stays bounded by the machine
+   * rather than multiplying with the number of local workers. Threads are daemons and time out
+   * when idle, so the pool never keeps the compiler alive.
+   */
+  private static final ExecutorService EXECUTOR = createExecutor();
+
+  private static ExecutorService createExecutor() {
+    int threads = Math.max(1, Runtime.getRuntime().availableProcessors());
+    // Core and maximum size must be equal: with an unbounded queue a ThreadPoolExecutor never
+    // grows past its core size.
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(threads, threads, 60L, TimeUnit.SECONDS,
+        Queues.<Runnable>newLinkedBlockingQueue(),
+        new ThreadFactoryBuilder().setDaemon(true).setNameFormat("gwt-codesplitter-%d").build());
+    executor.allowCoreThreadTimeOut(true);
+    return executor;
+  }
+
+  /**
+   * Applies {@code task} to each input concurrently and returns the results keyed by input, in the
+   * iteration order of {@code inputs} so that callers that need determinism can consume them
+   * serially. {@code task} must not itself call this method, as the calling thread blocks until
+   * every subtask completes.
+   */
+  static <I, O> Map<I, O> computeInParallel(Collection<I> inputs, final Function<I, O> task) {
+    if (inputs.size() <= 1) {
+      Map<I, O> resultByInput = Maps.newLinkedHashMap();
+      for (I input : inputs) {
+        resultByInput.put(input, task.apply(input));
+      }
+      return resultByInput;
+    }
+
+    Map<I, Future<O>> futureByInput = Maps.newLinkedHashMap();
+    for (final I input : inputs) {
+      futureByInput.put(input, EXECUTOR.submit(new Callable<O>() {
+        @Override
+        public O call() {
+          return task.apply(input);
+        }
+      }));
+    }
+
+    Map<I, O> resultByInput = Maps.newLinkedHashMap();
+    for (Map.Entry<I, Future<O>> entry : futureByInput.entrySet()) {
+      try {
+        resultByInput.put(entry.getKey(), entry.getValue().get());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException(e);
+      } catch (ExecutionException e) {
+        throw new RuntimeException(e.getCause());
+      }
+    }
+    return resultByInput;
   }
 }

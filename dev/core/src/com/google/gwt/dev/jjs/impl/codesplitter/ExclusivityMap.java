@@ -30,6 +30,7 @@ import com.google.gwt.dev.jjs.ast.JVisitor;
 import com.google.gwt.dev.jjs.ast.js.JsniMethodRef;
 import com.google.gwt.dev.jjs.impl.ControlFlowAnalyzer;
 import com.google.gwt.dev.js.ast.JsStatement;
+import com.google.gwt.thirdparty.guava.common.base.Function;
 import com.google.gwt.thirdparty.guava.common.base.Predicates;
 import com.google.gwt.thirdparty.guava.common.collect.Maps;
 import com.google.gwt.thirdparty.guava.common.collect.Sets;
@@ -77,6 +78,22 @@ class ExclusivityMap {
     @Override
     public boolean miscellaneousStatementsAreLive() {
       return true;
+    }
+  }
+
+  /**
+   * The atoms that are live in the whole program but dead in a fragment's complement, hence
+   * exclusive to that fragment.
+   */
+  private static class ExclusiveAtoms {
+    private final Set<JField> fields;
+    private final Set<JMethod> methods;
+    private final Set<JDeclaredType> types;
+
+    private ExclusiveAtoms(Set<JField> fields, Set<JMethod> methods, Set<JDeclaredType> types) {
+      this.fields = fields;
+      this.methods = methods;
+      this.types = types;
     }
   }
 
@@ -244,27 +261,45 @@ class ExclusivityMap {
    * exclusively live fragment associated with that split point.
    */
   private void compute(Collection<Fragment> exclusiveFragments, ControlFlowAnalyzer completeCfa,
-      Map<Fragment, ControlFlowAnalyzer> notExclusiveCfaByFragment) {
+      final Map<Fragment, ControlFlowAnalyzer> notExclusiveCfaByFragment) {
 
-    Set<JField> allLiveFields = filter(Sets.union(completeCfa.getLiveFieldsAndMethods(),
+    final Set<JField> allLiveFields = filter(Sets.union(completeCfa.getLiveFieldsAndMethods(),
         completeCfa.getFieldsWritten()), JField.class);
-    Set<JMethod> allLiveMethods = filter(completeCfa.getLiveFieldsAndMethods(), JMethod.class);
-    Set<JDeclaredType> allLiveTypes =
+    final Set<JMethod> allLiveMethods =
+        filter(completeCfa.getLiveFieldsAndMethods(), JMethod.class);
+    final Set<JDeclaredType> allLiveTypes =
         filter(completeCfa.getInstantiatedTypes(), JDeclaredType.class);
 
     for (Fragment fragment : exclusiveFragments) {
       assert fragment.isExclusive();
-      ControlFlowAnalyzer complementCfa = notExclusiveCfaByFragment.get(fragment);
-      Set<JNode> nodesNotExclusiveToFragment = Sets.union(complementCfa.getLiveFieldsAndMethods(),
-          complementCfa.getFieldsWritten());
+    }
 
-      putIfAbsent(fragmentForField, fragment,
-          Sets.difference(allLiveFields, nodesNotExclusiveToFragment));
-      putIfAbsent(fragmentForMethod, fragment,
-          Sets.difference(allLiveMethods, complementCfa.getLiveFieldsAndMethods()));
-      putIfAbsent(fragmentForType, fragment,
-          Sets.difference(allLiveTypes,
-              filter(complementCfa.getInstantiatedTypes(), JDeclaredType.class)));
+    // Each fragment scans the complete live atom sets, and only reads them, so the scans run
+    // concurrently. Claiming the atoms stays serial and in fragment iteration order, because the
+    // first fragment to claim an atom keeps it.
+    Map<Fragment, ExclusiveAtoms> exclusiveAtomsByFragment = CodeSplitters.computeInParallel(
+        exclusiveFragments, new Function<Fragment, ExclusiveAtoms>() {
+          @Override
+          public ExclusiveAtoms apply(Fragment fragment) {
+            ControlFlowAnalyzer complementCfa = notExclusiveCfaByFragment.get(fragment);
+            Set<JNode> nodesNotExclusiveToFragment = Sets.union(
+                complementCfa.getLiveFieldsAndMethods(), complementCfa.getFieldsWritten());
+            return new ExclusiveAtoms(
+                Sets.newLinkedHashSet(
+                    Sets.difference(allLiveFields, nodesNotExclusiveToFragment)),
+                Sets.newLinkedHashSet(
+                    Sets.difference(allLiveMethods, complementCfa.getLiveFieldsAndMethods())),
+                Sets.newLinkedHashSet(Sets.difference(allLiveTypes,
+                    filter(complementCfa.getInstantiatedTypes(), JDeclaredType.class))));
+          }
+        });
+
+    for (Map.Entry<Fragment, ExclusiveAtoms> entry : exclusiveAtomsByFragment.entrySet()) {
+      Fragment fragment = entry.getKey();
+      ExclusiveAtoms exclusiveAtoms = entry.getValue();
+      putIfAbsent(fragmentForField, fragment, exclusiveAtoms.fields);
+      putIfAbsent(fragmentForMethod, fragment, exclusiveAtoms.methods);
+      putIfAbsent(fragmentForType, fragment, exclusiveAtoms.types);
     }
 
     // Assign all living atoms to left overs.

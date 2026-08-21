@@ -29,6 +29,7 @@ import com.google.gwt.dev.js.ast.JsNumericEntry;
 import com.google.gwt.dev.js.ast.JsProgram;
 import com.google.gwt.dev.js.ast.JsStatement;
 import com.google.gwt.dev.util.log.perf.SimpleEvent;
+import com.google.gwt.thirdparty.guava.common.base.Function;
 import com.google.gwt.thirdparty.guava.common.base.Predicate;
 import com.google.gwt.thirdparty.guava.common.collect.Collections2;
 import com.google.gwt.thirdparty.guava.common.collect.Iterables;
@@ -43,11 +44,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 /**
  * <p>
@@ -273,6 +269,39 @@ public class CodeSplitter {
   }
 
   /**
+   * Extracts the statements of every exclusive fragment. Extraction rescans the whole JavaScript
+   * program per fragment and only reads it, so the fragments are processed in parallel unless
+   * statement logging is on, which writes to shared state.
+   */
+  private Map<Fragment, List<JsStatement>> statementsForExclusiveFragments(
+      Collection<Fragment> exclusiveFragments, final ExclusivityMap exclusivityMap) {
+    for (Fragment fragment : exclusiveFragments) {
+      assert fragment.isExclusive();
+    }
+
+    final LivenessPredicate alreadyLoaded =
+        exclusivityMap.getLivenessPredicate(ExclusivityMap.NOT_EXCLUSIVE);
+
+    if (logFragmentMap) {
+      Map<Fragment, List<JsStatement>> statementsByFragment = Maps.newLinkedHashMap();
+      for (Fragment fragment : exclusiveFragments) {
+        statementsByFragment.put(fragment, statementsForFragment(fragment.getFragmentId(),
+            alreadyLoaded, exclusivityMap.getLivenessPredicate(fragment)));
+      }
+      return statementsByFragment;
+    }
+
+    return CodeSplitters.computeInParallel(exclusiveFragments,
+        new Function<Fragment, List<JsStatement>>() {
+          @Override
+          public List<JsStatement> apply(Fragment fragment) {
+            return fragmentExtractor.extractStatements(
+                exclusivityMap.getLivenessPredicate(fragment), alreadyLoaded);
+          }
+        });
+  }
+
+  /**
    * For each exclusive fragment (those that are not part of the initial load sequence) compute
    * a CFA that traces every split point not in the fragment; i.e. computes the atoms that are
    * live in (WholeProgram - Fragment).
@@ -322,34 +351,16 @@ public class CodeSplitter {
    */
   private Map<Fragment, ControlFlowAnalyzer> computeNotExclusiveCfaForFragmentsInParallel(
       final Collection<Fragment> exclusiveFragments) {
-    Map<Fragment, ControlFlowAnalyzer> notExclusiveCfaByFragment = Maps.newLinkedHashMap();
-    int threads = Math.min(Runtime.getRuntime().availableProcessors(), exclusiveFragments.size());
-    ExecutorService executor = Executors.newFixedThreadPool(threads);
-    try {
-      Map<Fragment, Future<ControlFlowAnalyzer>> futures = Maps.newLinkedHashMap();
-      for (final Fragment fragment : exclusiveFragments) {
-        assert fragment.isExclusive();
-        futures.put(fragment, executor.submit(new Callable<ControlFlowAnalyzer>() {
+    for (Fragment fragment : exclusiveFragments) {
+      assert fragment.isExclusive();
+    }
+    return CodeSplitters.computeInParallel(exclusiveFragments,
+        new Function<Fragment, ControlFlowAnalyzer>() {
           @Override
-          public ControlFlowAnalyzer call() {
+          public ControlFlowAnalyzer apply(Fragment fragment) {
             return computeNotExclusiveCfaForFragment(fragment, exclusiveFragments);
           }
-        }));
-      }
-      for (Map.Entry<Fragment, Future<ControlFlowAnalyzer>> entry : futures.entrySet()) {
-        try {
-          notExclusiveCfaByFragment.put(entry.getKey(), entry.getValue().get());
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-          throw new RuntimeException(e.getCause());
-        }
-      }
-    } finally {
-      executor.shutdown();
-    }
-    return notExclusiveCfaByFragment;
+        });
   }
 
   private ControlFlowAnalyzer computeNotExclusiveCfaForFragment(Fragment fragment,
@@ -523,17 +534,11 @@ public class CodeSplitter {
      * Populate the exclusively live fragments. Each includes everything
      * exclusively live after entry point i.
      */
-    for (Fragment fragment : exclusiveFragments) {
-      assert fragment.isExclusive();
-
-      LivenessPredicate alreadyLoaded = exclusivityMap.getLivenessPredicate(
-          ExclusivityMap.NOT_EXCLUSIVE);
-      LivenessPredicate liveNow = exclusivityMap.getLivenessPredicate(fragment);
-      List<JsStatement> statements = statementsForFragment(fragment.getFragmentId(),
-          alreadyLoaded, liveNow);
-      fragment.setStatements(statements);
-      fragment.addStatements(
-          fragmentExtractor.createOnLoadedCall(fragment.getFragmentId()));
+    for (Map.Entry<Fragment, List<JsStatement>> entry :
+        statementsForExclusiveFragments(exclusiveFragments, exclusivityMap).entrySet()) {
+      Fragment fragment = entry.getKey();
+      fragment.setStatements(entry.getValue());
+      fragment.addStatements(fragmentExtractor.createOnLoadedCall(fragment.getFragmentId()));
     }
 
     fragments.addAll(exclusiveFragments);

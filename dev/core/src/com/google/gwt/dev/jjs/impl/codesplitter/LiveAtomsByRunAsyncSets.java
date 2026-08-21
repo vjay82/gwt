@@ -21,6 +21,7 @@ import com.google.gwt.dev.jjs.ast.JNode;
 import com.google.gwt.dev.jjs.ast.JReferenceType;
 import com.google.gwt.dev.jjs.ast.JRunAsync;
 import com.google.gwt.dev.jjs.impl.ControlFlowAnalyzer;
+import com.google.gwt.thirdparty.guava.common.base.Function;
 import com.google.gwt.thirdparty.guava.common.collect.LinkedHashMultiset;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
 import com.google.gwt.thirdparty.guava.common.collect.Maps;
@@ -219,14 +220,30 @@ class LiveAtomsByRunAsyncSets {
    * atoms and finally compute the payload size for each subset.
    */
   public void recordLiveSubsetsAndEstimateTheirSizes(
-      ControlFlowAnalyzer initialSequenceCfa, Collection<Collection<JRunAsync>> groupedRunAsyncs) {
+      final ControlFlowAnalyzer initialSequenceCfa,
+      Collection<Collection<JRunAsync>> groupedRunAsyncs) {
     this.groupedRunAsyncs = groupedRunAsyncs;
+
+    List<JRunAsync> runAsyncs = Lists.newArrayList();
     for (Collection<JRunAsync> runAsyncGroup : groupedRunAsyncs) {
-      for (JRunAsync runAsync : runAsyncGroup) {
-        ControlFlowAnalyzer withRunAsyncCfa = new ControlFlowAnalyzer(initialSequenceCfa);
-        withRunAsyncCfa.traverseFromRunAsync(runAsync);
-        recordLiveSubset(withRunAsyncCfa, runAsync);
-      }
+      runAsyncs.addAll(runAsyncGroup);
+    }
+
+    // The traversals are independent: each builds its own ControlFlowAnalyzer, whose copy
+    // constructor duplicates every mutable set, and otherwise only reads the program. Recording
+    // them assigns runAsync ids, so that stays serial and in iteration order.
+    Map<JRunAsync, ControlFlowAnalyzer> cfaByRunAsync = CodeSplitters.computeInParallel(runAsyncs,
+        new Function<JRunAsync, ControlFlowAnalyzer>() {
+          @Override
+          public ControlFlowAnalyzer apply(JRunAsync runAsync) {
+            ControlFlowAnalyzer withRunAsyncCfa = new ControlFlowAnalyzer(initialSequenceCfa);
+            withRunAsyncCfa.traverseFromRunAsync(runAsync);
+            return withRunAsyncCfa;
+          }
+        });
+
+    for (Map.Entry<JRunAsync, ControlFlowAnalyzer> entry : cfaByRunAsync.entrySet()) {
+      recordLiveSubset(entry.getValue(), entry.getKey());
     }
     accumulatePayloadSizes();
   }
