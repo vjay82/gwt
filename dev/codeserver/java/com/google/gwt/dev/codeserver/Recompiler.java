@@ -205,20 +205,14 @@ public class Recompiler {
 
     long startTime = System.currentTimeMillis();
     CompileDir compileDir = outboxDir.makeCompileDir(logger);
+    ModuleDef module;
     try (FileWriter logWriter = new FileWriter(compileDir.getLogFile(), true)) {
       TreeLogger compileLogger = makeCompileLogger(logWriter, logger);
-      ModuleDef module;
       try {
         module = loadModule(compileLogger);
 
-        logger.log(TreeLogger.INFO, "Loading Java files in " + inputModuleName + ".");
         CompilerOptions loadOptions = new CompilerOptionsImpl(compileDir, inputModuleName, options);
         compilerContext = compilerContextBuilder.options(loadOptions).unitCache(unitCache).build();
-
-        // Loads and parses all the Java files in the GWT application using the JDT.
-        // (This is warmup to make compiling faster later; we stop at this point to avoid
-        // needing to know the binding properties.)
-        module.getCompilationState(compileLogger, compilerContext);
 
         setUpCompileDir(compileDir, module, compileLogger);
         if (launcherDir != null) {
@@ -233,12 +227,48 @@ public class Recompiler {
 
       long elapsedTime = System.currentTimeMillis() - startTime;
       compileLogger.log(TreeLogger.Type.INFO, "Module setup completed in " + elapsedTime + " ms");
-
-      return new Result(compileDir, module.getName(), null);
     } catch (IOException e) {
       logger.log(TreeLogger.Type.ERROR, "Unable to open compile log file", e);
       throw new UnableToCompleteException();
     }
+
+    startBackgroundWarmup(module, compileDir, logger);
+
+    return new Result(compileDir, module.getName(), null);
+  }
+
+  /**
+   * Loads and parses all the Java files in the module using the JDT, to make the first compile
+   * faster. (We stop at this point to avoid needing to know the binding properties.)
+   *
+   * <p>This only fills caches, so it runs in the background and Super Dev Mode starts serving
+   * without waiting for it. A compile that arrives meanwhile blocks on this object's monitor
+   * rather than racing the warmup.
+   */
+  private void startBackgroundWarmup(final ModuleDef module, final CompileDir compileDir,
+      final TreeLogger logger) {
+    Thread warmup = new Thread(new Runnable() {
+      @Override
+      public void run() {
+        synchronized (Recompiler.this) {
+          long startTime = System.currentTimeMillis();
+          try (FileWriter logWriter = new FileWriter(compileDir.getLogFile(), true)) {
+            TreeLogger warmupLogger = makeCompileLogger(logWriter, logger);
+            warmupLogger.log(TreeLogger.Type.INFO,
+                "Loading Java files in " + inputModuleName + ".");
+            module.getCompilationState(warmupLogger, compilerContext);
+            warmupLogger.log(TreeLogger.Type.INFO, "Loaded Java files in " + inputModuleName
+                + " in " + (System.currentTimeMillis() - startTime) + " ms");
+          } catch (Throwable e) {
+            // The first compile redoes this work and will report any error that matters.
+            logger.log(TreeLogger.Type.TRACE,
+                "Failed to warm up " + inputModuleName + "; loading it during the first compile", e);
+          }
+        }
+      }
+    }, "gwt-warmup-" + inputModuleName);
+    warmup.setDaemon(true);
+    warmup.start();
   }
 
   /**
