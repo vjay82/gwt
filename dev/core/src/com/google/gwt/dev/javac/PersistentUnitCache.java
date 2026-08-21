@@ -22,9 +22,11 @@ import com.google.gwt.dev.jjs.InternalCompilerException;
 import com.google.gwt.thirdparty.guava.common.annotations.VisibleForTesting;
 import com.google.gwt.thirdparty.guava.common.base.Preconditions;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
+import com.google.gwt.thirdparty.guava.common.collect.Sets;
 
 import java.io.File;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -92,6 +94,13 @@ class PersistentUnitCache extends MemoryUnitCache {
   static final int CACHE_FILE_THRESHOLD = 40;
 
   /**
+   * Resource paths of the units this session actually looked up or compiled. Only these get
+   * rewritten into today's cache directory, so a unit that stops being referenced disappears
+   * once the day directory it was last written to expires.
+   */
+  private final Set<String> usedResourcePaths = Sets.newHashSet();
+
+  /**
    * Note: to avoid deadlock, methods on backgroundService should not be called from
    * within a synchronized method. (The BackgroundService lock should be acquired first.)
    */
@@ -128,6 +137,7 @@ class PersistentUnitCache extends MemoryUnitCache {
     backgroundService.asyncClearCache();
     backgroundService.finishAndShutdown();
     synchronized (this) {
+      usedResourcePaths.clear();
       super.clear();
     }
     backgroundService.start();
@@ -136,9 +146,10 @@ class PersistentUnitCache extends MemoryUnitCache {
   /**
    * Rotates to a new file and/or starts garbage collection if needed after a compile is finished.
    *
-   * Normally, only newly compiled units are written to the current log, but
-   * when it is time to cleanup, valid units from older log files need to be
-   * re-written.
+   * Normally, only newly compiled units are written to the current log, but when it is time to
+   * clean up, the units this session used are re-written into today's directory. Units that
+   * weren't used are left behind in the older directories they came from, which get deleted
+   * once they fall out of the retention window.
    */
   @Override
   public void cleanup(TreeLogger logger) {
@@ -157,7 +168,13 @@ class PersistentUnitCache extends MemoryUnitCache {
     int addCallCount = newUnitsSinceLastCleanup.getAndSet(0);
     logger.log(TreeLogger.TRACE, "Added " + addCallCount +
         " units to PersistentUnitCache since last cleanup");
-    if (addCallCount == 0) {
+
+    List<CompilationUnit> unitsToSave = getUnitsToSaveToDisk();
+    // Promoting an empty set would wipe today's directory for nothing.
+    boolean promotionPending =
+        backgroundService.hasUnitsFromEarlierDays() && !unitsToSave.isEmpty();
+
+    if (addCallCount == 0 && !promotionPending) {
       // Don't clean up until we compiled something.
       logger.log(TreeLogger.TRACE, "Skipped PersistentUnitCache because no units were added");
       cleanupInProgress.release();
@@ -165,7 +182,7 @@ class PersistentUnitCache extends MemoryUnitCache {
     }
 
     int closedCount = backgroundService.getClosedCacheFileCount();
-    if (closedCount < CACHE_FILE_THRESHOLD) {
+    if (!promotionPending && closedCount < CACHE_FILE_THRESHOLD) {
       // Not enough files yet, so just rotate to a new file.
       logger.log(TreeLogger.TRACE, "Rotating PersistentUnitCache file because only " +
           closedCount + " files were added.");
@@ -173,8 +190,9 @@ class PersistentUnitCache extends MemoryUnitCache {
       return;
     }
 
-    logger.log(Type.TRACE, "Compacting persistent unit cache files");
-    backgroundService.asyncCompact(getUnitsToSaveToDisk(), cleanupInProgress);
+    logger.log(Type.TRACE, "Writing " + unitsToSave.size() +
+        " used units to today's persistent unit cache directory");
+    backgroundService.asyncCompact(unitsToSave, cleanupInProgress);
   }
 
   /**
@@ -197,7 +215,11 @@ class PersistentUnitCache extends MemoryUnitCache {
   public CompilationUnit find(ContentId contentId) {
     backgroundService.waitForCacheToLoad();
     synchronized (this) {
-      return super.find(contentId);
+      CompilationUnit unit = super.find(contentId);
+      if (unit != null) {
+        usedResourcePaths.add(unit.getResourcePath());
+      }
+      return unit;
     }
   }
 
@@ -205,7 +227,11 @@ class PersistentUnitCache extends MemoryUnitCache {
   public CompilationUnit find(String resourcePath) {
     backgroundService.waitForCacheToLoad();
     synchronized (this) {
-      return super.find(resourcePath);
+      CompilationUnit unit = super.find(resourcePath);
+      if (unit != null) {
+        usedResourcePaths.add(resourcePath);
+      }
+      return unit;
     }
   }
 
@@ -219,6 +245,7 @@ class PersistentUnitCache extends MemoryUnitCache {
    */
   private synchronized void addNewUnit(CompilationUnit unit) {
     newUnitsSinceLastCleanup.incrementAndGet();
+    usedResourcePaths.add(unit.getResourcePath());
     super.add(unit);
   }
 
@@ -248,8 +275,11 @@ class PersistentUnitCache extends MemoryUnitCache {
 
   private synchronized List<CompilationUnit> getUnitsToSaveToDisk() {
     List<CompilationUnit> result = Lists.newArrayList();
-    for (UnitCacheEntry entry : unitMap.values()) {
-      result.add(Preconditions.checkNotNull(entry.getUnit()));
+    for (String resourcePath : usedResourcePaths) {
+      UnitCacheEntry entry = unitMap.get(resourcePath);
+      if (entry != null) {
+        result.add(Preconditions.checkNotNull(entry.getUnit()));
+      }
     }
     return result;
   }
@@ -375,6 +405,10 @@ class PersistentUnitCache extends MemoryUnitCache {
       return cacheDir.getClosedCacheFileCount();
     }
 
+    boolean hasUnitsFromEarlierDays() {
+      return cacheDir.hasUnitsFromEarlierDays();
+    }
+
     /**
      * Rotates to a new file.
      * @param cleanupInProgress a semaphore to release when done.
@@ -428,7 +462,7 @@ class PersistentUnitCache extends MemoryUnitCache {
         @Override
         public void run() {
           cacheDir.closeCurrentFile();
-          cacheDir.deleteClosedCacheFiles();
+          cacheDir.deleteAllCacheFiles();
         }
       });
       service.shutdown(); // Don't allow more tasks to be scheduled.

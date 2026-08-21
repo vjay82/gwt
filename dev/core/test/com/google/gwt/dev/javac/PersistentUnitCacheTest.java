@@ -31,6 +31,8 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 
@@ -338,6 +340,103 @@ public class PersistentUnitCacheTest extends TestCase {
       + " (see stdout for list)");
   }
 
+  /**
+   * Units are read from earlier day directories, but only the ones this session actually used
+   * get rewritten into today's directory, and day directories outside the retention window are
+   * removed on startup.
+   */
+  public void testDayDirectoryRetention() throws IOException, InterruptedException,
+      UnableToCompleteException, ExecutionException {
+    File parentDir = lastParentDir = File.createTempFile("dayDirTest", "");
+    File dayDir = mkCacheDir(parentDir);
+    File cacheDir = dayDir.getParentFile();
+
+    PersistentUnitCache cache = new PersistentUnitCache(logger, parentDir, hash1);
+    cache.internalAdd(new MockCompilationUnit("com.example.Kept", "Kept Source")).get();
+    cache.internalAdd(new MockCompilationUnit("com.example.Dropped", "Dropped Source")).get();
+    cache.cleanup(logger);
+    cache.waitForCleanup();
+    cache.shutdown();
+
+    // Backdate today's directory by one day so it counts as "yesterday" on the next startup.
+    File yesterdayDir =
+        new File(cacheDir, LocalDate.now().minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE));
+    assertTrue(dayDir.renameTo(yesterdayDir));
+
+    // A session that only touches Kept should promote Kept and leave Dropped behind.
+    cache = new PersistentUnitCache(logger, parentDir, hash1);
+    assertNotNull(cache.find("com/example/Kept.java"));
+    cache.cleanup(logger);
+    cache.waitForCleanup();
+    cache.shutdown();
+    assertNumCacheFiles(dayDir, 1);
+
+    // Age out yesterday's directory; Dropped only ever lived there.
+    File staleDir =
+        new File(cacheDir, LocalDate.now().minusDays(5).format(DateTimeFormatter.ISO_LOCAL_DATE));
+    assertTrue(yesterdayDir.renameTo(staleDir));
+
+    cache = new PersistentUnitCache(logger, parentDir, hash1);
+    assertFalse("expired day directory should be deleted", staleDir.exists());
+    assertNotNull(cache.find("com/example/Kept.java"));
+    assertNull(cache.find("com/example/Dropped.java"));
+    cache.shutdown();
+  }
+
+  /**
+   * A build and a code server can share a cache directory. Compacting in one of them must not
+   * delete the cache file that the other one is still appending to.
+   */
+  public void testDoesNotDeleteCacheFileOpenByAnotherCompiler() throws IOException,
+      UnableToCompleteException {
+    File parentDir = lastParentDir = File.createTempFile("concurrentTest", "");
+    File dayDir = mkCacheDir(parentDir);
+
+    // Stands in for the compiler in the other process; it never closes its file.
+    PersistentUnitCacheDir stillRunning = new PersistentUnitCacheDir(logger, parentDir, hash1);
+    stillRunning.writeUnit(new MockCompilationUnit("com.example.Other", "Other Source"));
+
+    PersistentUnitCacheDir compacting = new PersistentUnitCacheDir(logger, parentDir, hash1);
+    assertNumCacheFiles(dayDir, 2);
+
+    compacting.deleteClosedCacheFiles();
+    assertNumCacheFiles(dayDir, 2);
+
+    // Once the other compiler is done, its file becomes collectable.
+    stillRunning.closeCurrentFile();
+    compacting.deleteClosedCacheFiles();
+    assertNumCacheFiles(dayDir, 1);
+
+    compacting.closeCurrentFile();
+  }
+
+  /**
+   * Two compilers adding units at the same time each append to a file of their own, so neither
+   * corrupts the other and a later session reads back both sets of units.
+   */
+  public void testConcurrentAddsFromTwoCompilers() throws IOException, InterruptedException,
+      UnableToCompleteException, ExecutionException {
+    File parentDir = lastParentDir = File.createTempFile("concurrentAddTest", "");
+    File dayDir = mkCacheDir(parentDir);
+
+    PersistentUnitCacheDir build = new PersistentUnitCacheDir(logger, parentDir, hash1);
+    PersistentUnitCacheDir codeServer = new PersistentUnitCacheDir(logger, parentDir, hash1);
+    assertNumCacheFiles(dayDir, 2);
+
+    build.writeUnit(new MockCompilationUnit("com.example.FromBuild", "Build Source"));
+    codeServer.writeUnit(new MockCompilationUnit("com.example.FromCodeServer", "Server Source"));
+    build.writeUnit(new MockCompilationUnit("com.example.AlsoFromBuild", "More Build Source"));
+
+    build.closeCurrentFile();
+    codeServer.closeCurrentFile();
+
+    PersistentUnitCache cache = new PersistentUnitCache(logger, parentDir, hash1);
+    assertNotNull(cache.find("com/example/FromBuild.java"));
+    assertNotNull(cache.find("com/example/AlsoFromBuild.java"));
+    assertNotNull(cache.find("com/example/FromCodeServer.java"));
+    cache.shutdown();
+  }
+
   private void checkInvalidObjectInCache(Object toSerialize) throws IOException,
       UnableToCompleteException, InterruptedException, ExecutionException {
     File parentDir = lastParentDir = File.createTempFile("PersistentUnitTest-CNF", "");
@@ -367,7 +466,7 @@ public class PersistentUnitCacheTest extends TestCase {
     assertNotNull(parentDir);
     assertTrue(parentDir.exists());
     parentDir.delete();
-    File unitCacheDir = PersistentUnitCacheDir.chooseCacheDir(parentDir);
+    File unitCacheDir = PersistentUnitCacheDir.chooseDayDir(parentDir);
     unitCacheDir.mkdirs();
     return unitCacheDir;
   }

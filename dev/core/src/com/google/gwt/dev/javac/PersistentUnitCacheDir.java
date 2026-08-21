@@ -35,25 +35,54 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * The directory containing persistent unit cache files.
  * (Helper class for {@link PersistentUnitCache}.)
+ *
+ * <p>Cache files are grouped into one subdirectory per day. Units are read from every retained
+ * day directory but only ever written to today's, so a unit survives only as long as it keeps
+ * being used; see {@link PersistentUnitCache} for how promotion works.
+ *
+ * <p>The same directory may be shared by compilers running in separate processes at the same time,
+ * such as a build and a code server. Each cache file is written by a single process, which holds an
+ * exclusive lock on it until it is closed, and deletion skips files that are still locked. Every
+ * process therefore only ever reclaims files that nobody is appending to; whatever it leaves behind
+ * is reclaimed later when its day directory expires.
  */
 class PersistentUnitCacheDir {
 
   private static final String DIRECTORY_NAME = "gwt-unitCache";
   private static final String CACHE_FILE_PREFIX = "gwt-unitCache-";
 
+  /**
+   * How many day directories to keep, including today's. A cached unit is dropped once it has
+   * gone unused for this many days.
+   */
+  private static final int RETENTION_DAYS = 3;
+
+  private static final DateTimeFormatter DAY_DIR_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
   static final String CURRENT_VERSION_CACHE_FILE_PREFIX =
       CACHE_FILE_PREFIX + CompilerVersion.getHash();
 
   private final TreeLogger logger;
   private final File dir;
+  private final File dayDir;
   private final String filePrefix;
+
+  /** Set by {@link #loadUnitMap} when units were read from a day directory other than today's. */
+  private boolean loadedUnitsFromEarlierDays;
 
   // Non-null when a a cache file is open for writing. (Always true in normal operation.)
   private OpenFile openFile;
@@ -96,59 +125,178 @@ class PersistentUnitCacheDir {
       throw new UnableToCompleteException();
     }
 
-    logger.log(TreeLogger.TRACE, "Persistent unit cache dir set to: " + dir.getAbsolutePath());
+    dayDir = new File(dir, LocalDate.now().format(DAY_DIR_FORMAT));
+    if (!dayDir.isDirectory() && !dayDir.mkdirs()) {
+      logger.log(TreeLogger.WARN, "Can't create directory: " + dayDir.getAbsolutePath());
+      throw new UnableToCompleteException();
+    }
 
-    openFile = new OpenFile(logger, createEmptyCacheFile(logger, dir, filePrefix));
+    deleteExpiredDayDirs();
+
+    logger.log(TreeLogger.TRACE, "Persistent unit cache dir set to: " + dayDir.getAbsolutePath());
+
+    openFile = new OpenFile(logger, createEmptyCacheFile(logger, dayDir, filePrefix));
   }
 
   /**
-   * Returns the absolute path of the directory where cache files are stored.
+   * Returns the absolute path of the directory where cache files are written.
    */
   String getPath() {
-    return dir.getAbsolutePath();
+    return dayDir.getAbsolutePath();
   }
 
   /**
-   * Returns the number of files written to the cache directory and closed.
+   * Returns true when the in-memory cache holds units that only exist in an earlier day's
+   * directory, meaning they need to be promoted into today's directory to survive.
+   */
+  synchronized boolean hasUnitsFromEarlierDays() {
+    return loadedUnitsFromEarlierDays;
+  }
+
+  /**
+   * Returns the number of files written to today's cache directory and closed.
    */
   synchronized int getClosedCacheFileCount() {
-    return selectClosedFiles(listFiles(filePrefix)).size();
+    return selectClosedFiles(listFiles(dayDir, filePrefix)).size();
   }
 
   /**
-   * Load everything cached on disk into memory.
+   * Load everything cached on disk into memory, from today's directory and every retained
+   * earlier day's directory.
    */
   synchronized void loadUnitMap(PersistentUnitCache destination) {
     if (logger.isLoggable(TreeLogger.TRACE)) {
       logger.log(TreeLogger.TRACE, "Looking for previously cached Compilation Units in "
-          + getPath());
+          + dir.getAbsolutePath());
     }
     try (SimpleEvent ignored = new SimpleEvent("PersistentUnitCacheDir.loadUnitMap")) {
-      List<File> files = selectClosedFiles(listFiles(filePrefix));
-      for (File cacheFile : files) {
-        loadOrDeleteCacheFile(cacheFile, destination);
+      // Oldest day first so that newer copies of a unit overwrite older ones.
+      for (File eachDayDir : listDayDirs()) {
+        List<File> files = selectClosedFiles(listFiles(eachDayDir, filePrefix));
+        if (files.isEmpty()) {
+          continue;
+        }
+        if (!eachDayDir.equals(dayDir)) {
+          loadedUnitsFromEarlierDays = true;
+        }
+        for (File cacheFile : files) {
+          loadOrDeleteCacheFile(cacheFile, destination);
+        }
       }
     }
   }
 
   /**
-   * Delete all cache files in the directory except for the currently open file.
+   * Deletes every closed cache file of ours in today's directory. Called after the surviving units
+   * have been rewritten into a fresh file, so earlier days are left alone until they expire.
    */
   synchronized void deleteClosedCacheFiles() {
-    logger.log(TreeLogger.TRACE, "Deleting cache files from " + dir);
+    deleteClosedCacheFilesIn(dayDir);
+    loadedUnitsFromEarlierDays = false;
+  }
+
+  /**
+   * Deletes every cache file of ours in every day directory except for the currently open file.
+   */
+  synchronized void deleteAllCacheFiles() {
+    for (File eachDayDir : listDayDirs()) {
+      deleteClosedCacheFilesIn(eachDayDir);
+    }
+    loadedUnitsFromEarlierDays = false;
+  }
+
+  private void deleteClosedCacheFilesIn(File fromDir) {
+    logger.log(TreeLogger.TRACE, "Deleting cache files from " + fromDir);
 
     try (SimpleEvent ignored = new SimpleEvent("PersistentUnitCacheDir.deleteClosedCacheFiles")) {
-      // We want to delete cache files from previous versions as well.
-      List<File> allVersionsList = listFiles(CACHE_FILE_PREFIX);
+      // Only our own files: the rest belong to a compiler built from another version or configured
+      // with other options, which may be running right now. Those expire with their day directory.
+      List<File> ourFiles = listFiles(fromDir, filePrefix);
       int deleteCount = 0;
-      for (File candidate : allVersionsList) {
-        if (deleteUnlessOpen(candidate)) {
+      for (File candidate : ourFiles) {
+        if (deleteUnlessInUse(candidate)) {
           deleteCount++;
         }
       }
 
-      logger.log(TreeLogger.TRACE, "Deleted " + deleteCount + " cache files from " + dir);
+      logger.log(TreeLogger.TRACE, "Deleted " + deleteCount + " cache files from " + fromDir);
     }
+  }
+
+  /**
+   * Removes day directories outside the retention window, along with cache files left directly
+   * in the cache root by earlier versions of this class.
+   */
+  private void deleteExpiredDayDirs() {
+    LocalDate oldestToKeep = LocalDate.now().minusDays(RETENTION_DAYS - 1);
+
+    File[] children = dir.listFiles();
+    if (children == null) {
+      return;
+    }
+    for (File child : children) {
+      if (child.isDirectory()) {
+        LocalDate day = parseDayDirName(child.getName());
+        if (day != null && day.isBefore(oldestToKeep)) {
+          logger.log(Type.TRACE, "Deleting expired unit cache directory: " + child);
+          deleteRecursively(child);
+        }
+      } else if (child.getName().startsWith(CACHE_FILE_PREFIX)) {
+        // Left over from the flat layout used before day directories were introduced.
+        deleteUnlessInUse(child);
+      }
+    }
+  }
+
+  /**
+   * Returns the retained day directories, oldest first, always including today's.
+   */
+  private List<File> listDayDirs() {
+    List<File> out = Lists.newArrayList();
+    File[] children = dir.listFiles();
+    if (children != null) {
+      for (File child : children) {
+        if (child.isDirectory() && parseDayDirName(child.getName()) != null) {
+          out.add(child);
+        }
+      }
+    }
+    if (!out.contains(dayDir)) {
+      out.add(dayDir);
+    }
+    Collections.sort(out);
+    return out;
+  }
+
+  private static LocalDate parseDayDirName(String name) {
+    try {
+      return LocalDate.parse(name, DAY_DIR_FORMAT);
+    } catch (DateTimeParseException e) {
+      return null;
+    }
+  }
+
+  private boolean deleteRecursively(File toDelete) {
+    boolean complete = true;
+    File[] children = toDelete.listFiles();
+    if (children != null) {
+      for (File child : children) {
+        complete &= deleteRecursively(child);
+      }
+    }
+    if (toDelete.isFile() && (isOpen(toDelete) || isBeingWrittenByAnotherProcess(toDelete))) {
+      logger.log(Type.TRACE, "Keeping cache file that is still open: " + toDelete);
+      return false;
+    }
+    if (!complete) {
+      // Something below is still in use, so this directory can't go yet either.
+      return false;
+    }
+    if (!toDelete.delete()) {
+      logger.log(Type.WARN, "Unable to delete: " + toDelete);
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -160,14 +308,16 @@ class PersistentUnitCacheDir {
       openFile.close(logger);
       openFile = null;
     }
-    openFile = new OpenFile(logger, createEmptyCacheFile(logger, dir, filePrefix));
+    openFile = new OpenFile(logger, createEmptyCacheFile(logger, dayDir, filePrefix));
   }
 
   /**
-   * Deletes the given file unless it's currently open for writing.
+   * Deletes the given file unless it's still being appended to, either by this process or by a
+   * compiler running in another one.
    */
-  synchronized boolean deleteUnlessOpen(File cacheFile) {
-    if (isOpen(cacheFile)) {
+  synchronized boolean deleteUnlessInUse(File cacheFile) {
+    if (isOpen(cacheFile) || isBeingWrittenByAnotherProcess(cacheFile)) {
+      logger.log(Type.TRACE, "Keeping cache file that is still open: " + cacheFile);
       return false;
     }
     logger.log(Type.TRACE, "Deleting file: " + cacheFile);
@@ -176,6 +326,32 @@ class PersistentUnitCacheDir {
       logger.log(Type.WARN, "Unable to delete file: " + cacheFile);
     }
     return deleted;
+  }
+
+  /**
+   * Returns true if some other process has this cache file open for writing. Writers hold an
+   * exclusive lock for as long as their file is open, so a file that can't be locked belongs to a
+   * compiler that is still running and must be left alone.
+   */
+  private boolean isBeingWrittenByAnotherProcess(File cacheFile) {
+    if (!cacheFile.isFile()) {
+      return false;
+    }
+    // Opened without CREATE, so a file that someone else already deleted isn't recreated here.
+    try (FileChannel channel = FileChannel.open(cacheFile.toPath(), StandardOpenOption.WRITE)) {
+      FileLock lock = channel.tryLock();
+      if (lock == null) {
+        return true;
+      }
+      lock.release();
+      return false;
+    } catch (OverlappingFileLockException e) {
+      return true;
+    } catch (IOException e) {
+      logger.log(Type.TRACE, "Assuming cache file is in use because it can't be locked: "
+          + cacheFile, e);
+      return true;
+    }
   }
 
   /**
@@ -203,6 +379,14 @@ class PersistentUnitCacheDir {
   @VisibleForTesting
   static File chooseCacheDir(File parentDir) {
     return new File(parentDir, DIRECTORY_NAME);
+  }
+
+  /**
+   * Returns the directory that cache files are written to today.
+   */
+  @VisibleForTesting
+  static File chooseDayDir(File parentDir) {
+    return new File(chooseCacheDir(parentDir), LocalDate.now().format(DAY_DIR_FORMAT));
   }
 
   private boolean isOpen(File f) {
@@ -263,7 +447,7 @@ class PersistentUnitCacheDir {
       logger.log(TreeLogger.TRACE, "Loaded " + unitsLoaded +
           " units from cache file: " + cacheFile.getName());
     } else {
-      deleteUnlessOpen(cacheFile);
+      deleteUnlessInUse(cacheFile);
       logger.log(TreeLogger.TRACE, "Loaded " + unitsLoaded +
           " units from invalid cache file before deleting it: " + cacheFile.getName());
     }
@@ -276,8 +460,8 @@ class PersistentUnitCacheDir {
    * differs on Unix versus Windows, but is good enough to sort by age
    * for the names we use.</p>
    */
-  private List<File> listFiles(String prefix) {
-    File[] files = dir.listFiles();
+  private List<File> listFiles(File fromDir, String prefix) {
+    File[] files = fromDir.listFiles();
     if (files == null) {
       // Shouldn't happen, just satisfying null check warning.
       return Collections.emptyList();
@@ -339,6 +523,7 @@ class PersistentUnitCacheDir {
    */
   private static class OpenFile {
     private final File file;
+    private final FileLock lock;
     private final ObjectOutputStream stream;
     private int unitsWritten = 0;
 
@@ -350,9 +535,23 @@ class PersistentUnitCacheDir {
     OpenFile(TreeLogger logger, File toOpen)
         throws UnableToCompleteException {
       logger.log(Type.TRACE, "Opening cache file: " + toOpen);
-      ObjectOutputStream newStream = openObjectStream(logger, toOpen);
+      FileOutputStream fileStream = openFileStream(logger, toOpen);
+
+      FileLock fileLock;
+      ObjectOutputStream newStream;
+      try {
+        // Held until close so that a compiler in another process doesn't delete this file while
+        // it is still being appended to.
+        fileLock = fileStream.getChannel().tryLock();
+        newStream = new ObjectOutputStream(new BufferedOutputStream(fileStream));
+      } catch (IOException | OverlappingFileLockException e) {
+        logger.log(Type.ERROR, "Can't open persistent unit cache file", e);
+        closeAndDelete(fileStream, toOpen);
+        throw new UnableToCompleteException();
+      }
 
       this.file = toOpen;
+      this.lock = fileLock;
       this.stream = newStream;
       unitsWritten = 0;
     }
@@ -382,6 +581,14 @@ class PersistentUnitCacheDir {
           "Closing cache file: " + file + " (" + unitsWritten + " units written)");
 
       try {
+        if (lock != null) {
+          lock.release();
+        }
+      } catch (IOException e) {
+        logger.log(Type.WARN, "Error unlocking compilation unit cache file " + file, e);
+      }
+
+      try {
         stream.close();
       } catch (IOException e) {
         logger.log(Type.WARN, "Error closing compilation unit cache file " + file, e);
@@ -397,26 +604,24 @@ class PersistentUnitCacheDir {
       }
     }
 
-    private static ObjectOutputStream openObjectStream(TreeLogger logger, File file)
+    private static FileOutputStream openFileStream(TreeLogger logger, File file)
         throws UnableToCompleteException {
-
-      FileOutputStream fstream = null;
       try {
-        fstream = new FileOutputStream(file);
-        return new ObjectOutputStream(new BufferedOutputStream(fstream));
+        return new FileOutputStream(file);
       } catch (IOException e) {
         logger.log(Type.ERROR, "Can't open persistent unit cache file", e);
-        try {
-          if (fstream != null) {
-            fstream.close();
-            if (file.exists()) {
-              Files.delete(file.toPath());
-            }
-          }
-        } catch (IOException ignored) {
-          // We can't handle this, and already logged an error
-        }
         throw new UnableToCompleteException();
+      }
+    }
+
+    private static void closeAndDelete(FileOutputStream fileStream, File file) {
+      try {
+        fileStream.close();
+        if (file.exists()) {
+          Files.delete(file.toPath());
+        }
+      } catch (IOException ignored) {
+        // We can't handle this, and already logged an error
       }
     }
   }
