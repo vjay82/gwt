@@ -832,7 +832,7 @@ public class JsInliner {
         op = accept(op);
         ctx.replaceMe(op);
         // The accept above may have re-cached the caller while op was still detached.
-        containsNestedFunctionsCache.get().remove(callerFunction);
+        functionFactsCache.get().remove(callerFunction);
       }
 
       if (inlining.pop() != invokedFunction) {
@@ -1065,7 +1065,7 @@ public class JsInliner {
         return x;
       }
 
-      containsNestedFunctionsCache.get().remove(callerFunction);
+      functionFactsCache.get().remove(callerFunction);
 
       // We've committed to the inlining, ensure the vars are created
       newLocalVariableStack.peek().addAll(extrudedNames);
@@ -1596,11 +1596,22 @@ public class JsInliner {
       "gwt.jsinlinerInliningBias", "5"));
 
   /**
-   * Caches {@link #containsNestedFunctions(JsFunction)}, which would otherwise re-traverse a whole
-   * function body at every call site. Thread local because permutations compile concurrently.
+   * Analysis results that only depend on a function's body, which would otherwise be recomputed by
+   * re-traversing that whole body at every call site. Thread local because permutations compile
+   * concurrently.
    */
-  private static final ThreadLocal<Map<JsFunction, Boolean>> containsNestedFunctionsCache =
+  private static final ThreadLocal<Map<JsFunction, FunctionFacts>> functionFactsCache =
       ThreadLocal.withInitial(IdentityHashMap::new);
+
+  /**
+   * The cached facts about one function. Each field is computed on first use and stays valid until
+   * the inliner rewrites the function body, at which point the whole entry is dropped.
+   */
+  private static class FunctionFacts {
+    private Boolean containsNestedFunctions;
+    private Set<String> qualifiedInlinedBodyIdents;
+    private Set<String> unqualifiedInlinedBodyIdents;
+  }
 
   /**
    * Static entry point used by JavaToJavaScriptCompiler.
@@ -1642,15 +1653,21 @@ public class JsInliner {
    * Examine a JsFunction to determine if it contains nested functions.
    */
   private static boolean containsNestedFunctions(JsFunction func) {
-    return containsNestedFunctionsCache.get().computeIfAbsent(func, function -> {
+    FunctionFacts facts = factsFor(func);
+    if (facts.containsNestedFunctions == null) {
       NestedFunctionVisitor v = new NestedFunctionVisitor();
-      v.accept(function.getBody());
-      return v.containsNestedFunctions();
-    });
+      v.accept(func.getBody());
+      facts.containsNestedFunctions = v.containsNestedFunctions();
+    }
+    return facts.containsNestedFunctions;
+  }
+
+  private static FunctionFacts factsFor(JsFunction func) {
+    return functionFactsCache.get().computeIfAbsent(func, function -> new FunctionFacts());
   }
 
   private static int execImpl(JsProgram program, Collection<JsNode> toInline) {
-    containsNestedFunctionsCache.get().clear();
+    functionFactsCache.get().clear();
     try (OptimizerStats stats = OptimizerStats.optimization(NAME)) {
 
       // We are not covering the whole AST, hence we will try to inline functions with a single call
@@ -1687,7 +1704,7 @@ public class JsInliner {
    * names; the second pass looks for unqualified names, but ignores identifiers
    * that refer to function parameters.
    */
-  private static boolean hasCommonIdents(List<JsExpression> arguments,
+  private static boolean hasCommonIdents(JsFunction callee, List<JsExpression> arguments,
       JsNode toInline, Collection<String> parameterIdents) {
 
     // This is a fire-twice loop
@@ -1698,8 +1715,6 @@ public class JsInliner {
       // Collect the idents used in the arguments and the statement
       IdentCollector argCollector = new IdentCollector(checkQualified);
       argCollector.acceptList(arguments);
-      IdentCollector statementCollector = new IdentCollector(checkQualified);
-      statementCollector.accept(toInline);
 
       Set<String> idents = argCollector.getIdents();
 
@@ -1709,7 +1724,7 @@ public class JsInliner {
       }
 
       // Perform the set difference
-      idents.retainAll(statementCollector.getIdents());
+      idents.retainAll(inlinedBodyIdents(callee, toInline, checkQualified));
 
       if (idents.size() > 0) {
         return true;
@@ -1717,6 +1732,29 @@ public class JsInliner {
     } while (checkQualified);
 
     return false;
+  }
+
+  /**
+   * The idents of the expression that a call to {@code callee} would be replaced with. Cached per
+   * callee, since {@code toInline} is rebuilt from the same body at every call site and name
+   * replacement has not happened yet.
+   */
+  private static Set<String> inlinedBodyIdents(JsFunction callee, JsNode toInline,
+      boolean qualified) {
+    FunctionFacts facts = factsFor(callee);
+    Set<String> idents =
+        qualified ? facts.qualifiedInlinedBodyIdents : facts.unqualifiedInlinedBodyIdents;
+    if (idents == null) {
+      IdentCollector collector = new IdentCollector(qualified);
+      collector.accept(toInline);
+      idents = collector.getIdents();
+      if (qualified) {
+        facts.qualifiedInlinedBodyIdents = idents;
+      } else {
+        facts.unqualifiedInlinedBodyIdents = idents;
+      }
+    }
+    return idents;
   }
 
   /**
@@ -1832,7 +1870,7 @@ public class JsInliner {
      *
      * static int i; public void add(int a) { i += a; }; add(i++);
      */
-    if (hasCommonIdents(arguments, toInline, parameterIdents)) {
+    if (hasCommonIdents(callee, arguments, toInline, parameterIdents)) {
       return false;
     }
 
