@@ -209,8 +209,8 @@ class PersistentUnitCacheDir {
     logger.log(TreeLogger.TRACE, "Deleting cache files from " + fromDir);
 
     try (SimpleEvent ignored = new SimpleEvent("PersistentUnitCacheDir.deleteClosedCacheFiles")) {
-      // Only our own files: the rest belong to a compiler built from another version or configured
-      // with other options, which may be running right now. Those expire with their day directory.
+      // Only our own files: the rest belong to a compiler configured with other options, which may
+      // be running right now. Unreadable generations are reclaimed by deleteStaleGenerationsIn.
       List<File> ourFiles = listFiles(fromDir, filePrefix);
       int deleteCount = 0;
       for (File candidate : ourFiles) {
@@ -237,13 +237,32 @@ class PersistentUnitCacheDir {
     for (File child : children) {
       if (child.isDirectory()) {
         LocalDate day = parseDayDirName(child.getName());
-        if (day != null && day.isBefore(oldestToKeep)) {
+        if (day == null) {
+          continue;
+        }
+        if (day.isBefore(oldestToKeep)) {
           logger.log(Type.TRACE, "Deleting expired unit cache directory: " + child);
           deleteRecursively(child);
+        } else {
+          deleteStaleGenerationsIn(child);
         }
       } else if (child.getName().startsWith(CACHE_FILE_PREFIX)) {
         // Left over from the flat layout used before day directories were introduced.
         deleteUnlessInUse(child);
+      }
+    }
+  }
+
+  /**
+   * Deletes cache files that this compiler can never read back, because they were written by a
+   * compiler built from a different jar. {@link CompilerVersion} hashes the whole gwt-dev jar, so
+   * every rebuild of the compiler orphans the previous generation; without this they would occupy
+   * the disk until their day directory expires.
+   */
+  private void deleteStaleGenerationsIn(File fromDir) {
+    for (File candidate : listFiles(fromDir, CACHE_FILE_PREFIX)) {
+      if (!candidate.getName().startsWith(CURRENT_VERSION_CACHE_FILE_PREFIX)) {
+        deleteUnlessInUse(candidate);
       }
     }
   }
