@@ -49,17 +49,38 @@
   </target>
 
   <target name="build-stripped-gwt-dev"
-          description="Strips redundant/JDK-provided packages from gwt-dev.jar">
+          description="Strips redundant/JDK-provided packages from gwt-dev.jar and splits it">
     <property name="gwt.dev.jar" location="${gwt.build.lib}/gwt-dev.jar"/>
-    <property name="gwt.dev.jar.stripped" location="${gwt.build.lib}/gwt-dev-stripped.jar"/>
-    <jar destfile="${gwt.dev.jar.stripped}" duplicate="preserve" filesonly="false" index="true">
+    <!--
+      GWT's own classes are ~6MB of the ~54MB jar, the rest is third party code that only changes
+      when a library in tools/lib is upgraded. Shipping them separately means a compiler change
+      replaces the small jar only, instead of a 54MB binary in the consuming project's repository.
+      Also keeps CompilerVersion.getHash(), which hashes the jar holding JNode.class, from
+      invalidating the persistent unit cache whenever a dependency changes.
+    -->
+    <jar destfile="${gwt.build.lib}/gwt-dev-core.jar" duplicate="preserve" filesonly="false">
       <zipfileset src="${gwt.dev.jar}">
+        <include name="com/google/gwt/**"/>
+        <exclude name="com/google/gwt/thirdparty/**"/>
+      </zipfileset>
+      <manifest>
+        <attribute name="Main-Class" value="com.google.gwt.dev.GWTMain"/>
+        <attribute name="Class-Path" value="gwt-dev-deps.jar"/>
+      </manifest>
+    </jar>
+    <jar destfile="${gwt.build.lib}/gwt-dev-deps.jar" duplicate="preserve" filesonly="false">
+      <zipfileset src="${gwt.dev.jar}">
+        <exclude name="com/google/gwt/**"/>
         <exclude name="com/google/gson/**"/>
         <exclude name="org/apache/commons/**"/>
         <exclude name="org/apache/http/**"/>
         <exclude name="org/w3c/dom/**"/>
         <exclude name="netscape/**"/>
         <exclude name="javax/xml/**"/>
+      </zipfileset>
+      <!-- Rebased dependencies; excluded above by the com/google/gwt rule. -->
+      <zipfileset src="${gwt.dev.jar}">
+        <include name="com/google/gwt/thirdparty/**"/>
       </zipfileset>
     </jar>
   </target>
