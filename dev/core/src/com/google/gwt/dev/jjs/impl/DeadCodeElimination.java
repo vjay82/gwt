@@ -77,7 +77,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
@@ -524,7 +523,8 @@ public class DeadCodeElimination {
         }
       }
 
-      HashSet<JDeclaredType> clinitsCalled = new HashSet<JDeclaredType>();
+      // Most multi-expressions call no clinit at all, so only allocate once one turns up.
+      Set<JDeclaredType> clinitsCalled = null;
       for (int i = 0; i < numRemovableExpressions(x); ++i) {
         JExpression expr = x.getExpression(i);
         if (!expr.hasSideEffects()) {
@@ -549,14 +549,15 @@ public class DeadCodeElimination {
           // If a clinit of enclosingType or a subclass of enclosingType has already been
           // called as part of this JMultiExpression then this clinit call is noop at runtime
           // and can be statically removed.
-          if (enclosingType.findSubtype(clinitsCalled) != null) {
+          if (clinitsCalled == null) {
+            clinitsCalled = Sets.newHashSet();
+          } else if (enclosingType.findSubtype(clinitsCalled) != null) {
             x.removeExpression(i);
             --i;
             madeChanges();
             continue;
-          } else {
-            clinitsCalled.add(enclosingType);
           }
+          clinitsCalled.add(enclosingType);
         }
       }
 
