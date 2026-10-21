@@ -157,6 +157,7 @@ import com.google.gwt.dev.js.JsStaticEval;
 import com.google.gwt.dev.js.JsSymbolResolver;
 import com.google.gwt.dev.js.JsToStringGenerationVisitor;
 import com.google.gwt.dev.js.JsUnusedFunctionRemover;
+import com.google.gwt.dev.js.JsUnusedVarPruner;
 import com.google.gwt.dev.js.JsVerboseNamer;
 import com.google.gwt.dev.js.SizeBreakdown;
 import com.google.gwt.dev.js.ast.JavaScriptVerifier;
@@ -182,6 +183,7 @@ import com.google.gwt.dev.util.log.perf.AbstractJfrEvent;
 import com.google.gwt.dev.util.log.perf.SimpleEvent;
 import com.google.gwt.soyc.SoycDashboard;
 import com.google.gwt.soyc.io.ArtifactsOutputDirectory;
+import com.google.gwt.thirdparty.guava.common.annotations.VisibleForTesting;
 import com.google.gwt.thirdparty.guava.common.collect.ImmutableMap;
 import com.google.gwt.thirdparty.guava.common.collect.Iterables;
 import com.google.gwt.thirdparty.guava.common.collect.Lists;
@@ -441,7 +443,7 @@ public final class JavaToJavaScriptCompiler {
         // (7) Optimize the JS AST.
         final Set<JsNode> inlinableJsFunctions = jjsMapAndInlineableFunctions.getRight();
         optimizeJs(inlinableJsFunctions);
-        if (options.getOptimizationLevel() > OptionOptimize.OPTIMIZE_LEVEL_DRAFT) {
+        if (shouldOptimize()) {
           JsForceInliningChecker.check(logger, jjsmap, jsProgram);
         }
 
@@ -1042,12 +1044,17 @@ public final class JavaToJavaScriptCompiler {
   }
 
   private void optimizeJsLoop(Collection<JsNode> toInline) throws InterruptedException {
-    int optimizationLevel = options.getOptimizationLevel();
+    optimizeJsLoop(jsProgram, toInline, options.getOptimizationLevel());
+  }
+
+  @VisibleForTesting
+  static void optimizeJsLoop(JsProgram jsProgram, Collection<JsNode> toInline, int optimizationLevel)
+          throws InterruptedException {
     int passCount = 0;
     int nodeCount = jsProgram.getNodeCount();
 
-    boolean atMaxLevel = options.getOptimizationLevel() == OptionOptimize.OPTIMIZE_LEVEL_MAX;
-    int passLimit = atMaxLevel ? MAX_PASSES : options.getOptimizationLevel();
+    boolean atMaxLevel = optimizationLevel == OptionOptimize.OPTIMIZE_LEVEL_MAX;
+    int passLimit = atMaxLevel ? MAX_PASSES : optimizationLevel;
     float minChangeRate = atMaxLevel ? FIXED_POINT_CHANGE_RATE : EFFICIENT_CHANGE_RATE;
     while (true) {
       passCount++;
@@ -1071,6 +1078,8 @@ public final class JavaToJavaScriptCompiler {
         stats.recordModified(JsTrampolineRemover.exec(jsProgram));
         // Remove unused functions if possible.
         stats.recordModified(JsUnusedFunctionRemover.exec(jsProgram));
+        // Remove unused local variable declarations and write-only assignments.
+        stats.recordModified(JsUnusedVarPruner.exec(jsProgram));
 
         mods = stats.getNumMods();
         // Skip expensive full-tree node count when no modifications were made;
@@ -1205,8 +1214,7 @@ public final class JavaToJavaScriptCompiler {
       // (1) Initialize local state
       jprogram = new JProgram(compilerContext.getMinimalRebuildCache());
       // Synchronize JTypeOracle with compile optimization behavior.
-      jprogram.typeOracle.setOptimize(
-          options.getOptimizationLevel() > OptionOptimize.OPTIMIZE_LEVEL_DRAFT);
+      jprogram.typeOracle.setOptimize(shouldOptimize());
 
       jsProgram = new JsProgram();
 

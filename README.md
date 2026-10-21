@@ -6,6 +6,17 @@ I gave J2CL more than one shot but I neither love its tooling nor its limitation
 
 Currently based on GWT 2.13 (with most assigned PRs for 2.14 which did not break our test pipeline).
 
+Upstream is integrated through `bd56ee005ee4` (2026-10-14), including JDT 3.40.0
+from the matching GWT tools update. The JavaScript inliner follows upstream's
+implementation, replacing the fork's earlier declaration workaround and
+function-facts caches with upstream's correctness fixes and visitor-local cache.
+
+The Ant build bundles Servlet API 4.0.1 from
+`tools/lib/javax/servlet/javax.servlet-api-4.0.1.jar` (Maven coordinate
+`javax.servlet:javax.servlet-api:4.0.1`). Jetty's bundled older servlet classes are
+excluded so both `gwt-dev-for-mira-deps.jar` and `gwt-user.jar` expose the Servlet 4
+mapping API consistently. This does not upgrade Jetty's Servlet 3.1 implementation.
+
 Also implemented a `<add-linker name="main_window" />` which installs the script in the main window (not iframe) while still supporting async fragment loading. No more headaches with native libraries ($wnd vs window).
 
 
@@ -212,3 +223,34 @@ Also implemented a `<add-linker name="main_window" />` which installs the script
 
    `$ ( cd user && ant test.dev.htmlunit )`
 
+### Testing the latest version
+Builds are uploaded to Sonatype snapshots repository after each push to the main branch.
+To test them, you can download GWT from https://central.sonatype.com/repository/maven-snapshots/
+or add the following to your Maven POM:
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>org.gwtproject</groupId>
+      <artifactId>gwt</artifactId>
+      <version>HEAD-SNAPSHOT</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<repositories>
+  <repository>
+    <id>sonatype-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <releases>
+      <enabled>false</enabled>
+    </releases>
+    <snapshots>
+      <enabled>true</enabled>
+    </snapshots>
+  </repository>
+</repositories>
+```

@@ -64,7 +64,7 @@
           <include name="apache/tapestry-util-text-4.0.2.jar"/>
           <include name="apache/ant-zipscanner/ant-zipscanner-1.6.5-1-rebased.jar"/>
           <include name="colt/colt-1.2.jar"/>
-          <include name="eclipse/3.33.0/*.jar"/>
+          <include name="eclipse/3.40.0/*.jar"/>
           <include name="objectweb/asm-9.10.1/asm-9.10.1.jar"/>
           <include name="objectweb/asm-9.10.1/asm-commons-9.10.1.jar"/>
           <include name="objectweb/asm-9.10.1/asm-util-9.10.1.jar"/>
@@ -81,7 +81,7 @@
           <include name="jetty/jetty-9.4.58.v20250814/mortbay-apache-el-8.5.100.jar"/>
           <include name="jetty/jetty-9.4.58.v20250814/jetty-apache-jsp-9.4.58.v20250814.jar"/>
           <!-- dependencies needed for JSP support in DevMode: END -->
-          <include name="tomcat/tomcat-servlet-api-8.0.28.jar"/>
+          <include name="javax/servlet/javax.servlet-api-4.0.1.jar"/>
           <include name="tomcat/tomcat-websocket-api-8.0.28.jar"/>
           <include name="tomcat/tomcat-annotations-api-8.0.28.jar"/>
           <!-- htmlunit dependencies not already included: BEGIN -->
@@ -114,7 +114,7 @@
         <fileset file="${alldeps.jar}"/>
       </targetfiles>
       <sequential>
-        <gwt.jar destfile="${alldeps.jar}" duplicate="preserve">
+        <gwt.jar destfile="${alldeps.jar}" duplicate="preserve" update="false">
           <service type="javax.servlet.ServletContainerInitializer">
             <provider classname="org.eclipse.jetty.websocket.jsr356.server.deploy.WebSocketServerContainerInitializer"/>
             <provider classname="org.eclipse.jetty.apache.jsp.JettyJasperInitializer"/>
@@ -125,7 +125,7 @@
           <zipfileset src="${gwt.tools.lib}/apache/tapestry-util-text-4.0.2.jar"/>
           <zipfileset src="${gwt.tools.lib}/apache/ant-zipscanner/ant-zipscanner-1.6.5-1-rebased.jar"/>
           <zipfileset src="${gwt.tools.lib}/colt/colt-1.2.jar"/>
-          <zipgroupfileset dir="${gwt.tools.lib}/eclipse/3.33.0">
+          <zipgroupfileset dir="${gwt.tools.lib}/eclipse/3.40.0">
             <include name="**/*.jar"/>
           </zipgroupfileset>
           <zipfileset src="${gwt.tools.lib}/guava/guava-33.0/guava-33.0.0-jre-rebased.jar"/>
@@ -138,6 +138,8 @@
             javax.security.auth.message implementation as well as geronimo-jaspi.
              -->
             <exclude name="META-INF/services/org.eclipse.jetty.security.Authenticator$Factory"/>
+            <!-- Use the explicit Servlet 4 API below, not Jetty's bundled Servlet 3 API. -->
+            <exclude name="javax/servlet/**"/>
           </zipfileset>
           <zipfileset src="${gwt.tools.lib}/gson/gson-2.11.0.jar"/>
           <zipfileset src="${gwt.tools.lib}/jscomp/20231112/sourcemap-rebased.jar"/>
@@ -149,7 +151,7 @@
           <zipfileset src="${gwt.tools.lib}/jetty/jetty-9.4.58.v20250814/mortbay-apache-el-8.5.100.jar"/>
           <zipfileset src="${gwt.tools.lib}/jetty/jetty-9.4.58.v20250814/jetty-apache-jsp-9.4.58.v20250814.jar"/>
           <!-- dependencies needed for JSP support in DevMode: END -->
-          <zipfileset src="${gwt.tools.lib}/tomcat/tomcat-servlet-api-8.0.28.jar"/>
+          <zipfileset src="${gwt.tools.lib}/javax/servlet/javax.servlet-api-4.0.1.jar"/>
           <zipfileset src="${gwt.tools.lib}/tomcat/tomcat-websocket-api-8.0.28.jar"/>
           <zipfileset src="${gwt.tools.lib}/tomcat/tomcat-annotations-api-8.0.28.jar"/>
           <!-- htmlunit dependencies not already included: BEGIN -->
@@ -218,7 +220,7 @@
         <pathelement location="${gwt.tools.lib}/objectweb/asm-9.10.1/asm-9.10.1.jar"/>
         <pathelement location="${gwt.tools.lib}/objectweb/asm-9.10.1/asm-commons-9.10.1.jar"/>
         <pathelement location="${gwt.tools.lib}/objectweb/asm-9.10.1/asm-util-9.10.1.jar"/>
-        <fileset dir="${gwt.tools.lib}/eclipse/3.33.0">
+        <fileset dir="${gwt.tools.lib}/eclipse/3.40.0">
           <include name="**/*.jar"/>
         </fileset>
         <pathelement
@@ -349,7 +351,7 @@
         <fileset file="${project.lib}"/>
       </targetfiles>
       <sequential>
-        <gwt.jar>
+        <gwt.jar update="false">
           <fileset dir="core/src">
             <exclude name="**/package.html"/>
             <exclude name="**/*.properties"/> <!-- copied and/or filtered into bin -->
@@ -367,4 +369,3 @@
     </outofdate>
   </target>
 </project>
-

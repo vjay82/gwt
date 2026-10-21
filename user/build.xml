@@ -239,7 +239,6 @@
         <src path="super/com/google/gwt/emul/javaemul/internal" />
         <classpath>
           <pathelement location="${gwt.tools.lib}/gss/2015-11-04/closure-stylesheets-library-20151104-rebased.jar"/>
-          <!--        <pathelement location="${gwt.tools.lib}/tomcat/tomcat-servlet-api-8.0.28.jar"/>-->
           <pathelement location="${gwt.tools.lib}/jakarta-servlet/jakarta.servlet-api-5.0.0/jakarta.servlet-api-5.0.0.jar" />
           <pathelement location="${gwt.tools.lib}/junit/junit-4.8.2.jar"/>
           <pathelement location="${gwt.tools.lib}/selenium/selenium-java-client-driver.jar"/>
@@ -297,7 +296,7 @@
   <target name="build" depends="compile, compile-jakarta"
           description="Build and package this project">
     <mkdir dir="${gwt.build.lib}"/>
-    <gwt.jar>
+    <gwt.jar update="false">
       <fileset dir="src" excludes="**/package.html">
         <exclude name="com/google/web/bindery/requestfactory/server/RequestFactoryJarExtractor*" />
       </fileset>
@@ -305,7 +304,7 @@
       <fileset dir="${javac.out}">
         <exclude name="com/google/web/bindery/requestfactory/server/RequestFactoryJarExtractor*" />
       </fileset>
-      <zipfileset src="${gwt.tools.lib}/tomcat/tomcat-servlet-api-8.0.28.jar"
+      <zipfileset src="${gwt.tools.lib}/javax/servlet/javax.servlet-api-4.0.1.jar"
                   excludes="**/*.java"/>
       <zipfileset src="${gwt.tools.lib}/w3c/sac/sac-1.3.jar"/>
       <zipfileset src="${gwt.tools.lib}/w3c/flute/flute-1.3-gg2.jar"/>
@@ -862,4 +861,3 @@
     <gwt.ant dir=".." target="apicheck-nobuild"/>
   </target>
 </project>
-
